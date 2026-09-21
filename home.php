@@ -181,11 +181,7 @@
     }
 
 
-    /*
-    |--------------------------------------------------------------------------
-    | Generate a unique room/call ID for a new call
-    |--------------------------------------------------------------------------
-    */
+    /*=============== Generate a unique room/call ID for a new call ===============*/
 
     $room = isset($_GET['room']) &&
             is_string($_GET['room']) &&
