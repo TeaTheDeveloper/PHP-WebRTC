@@ -304,7 +304,7 @@ Example JSON payload stored in `data/`:
 | Area | Current Limitation | Potential Improvement |
 | :--- | :--- | :--- |
 | **Signaling** | File polling | WebSockets, Redis, Database, server-side cleanup jobs |
-| **WebRTC** | Video-only, STUN-only | Audio support, TURN integration, screen sharing, reconnection handling |
+| **WebRTC** | Video-only, STUN-only | TURN integration, screen sharing, reconnection handling |
 | **UX** | Basic call interface | Call duration, mute/unmute toggles, fullscreen controls, accessibility |
 | **Security** | Possession-based room access | Password protection, link expiration, rate limiting, CSRF protection |
 
