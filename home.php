@@ -199,7 +199,9 @@
                 content="width=device-width, initial-scale=1.0, viewport-fit=cover"
             >
 
+            <!-- Future product name -->
             <title>PeerCall</title>
+            <!-- Future product name -->
 
             <style>
                 @charset "utf-8";
