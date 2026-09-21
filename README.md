@@ -212,13 +212,16 @@ Used by browsers to retrieve pending signaling messages belonging to other clien
 PHP-WebRTC uses standard `RTCPeerConnection` for video streaming.
 
 ### Media Stream Settings
-Currently configured for video-only calls:
+Currently configured for video+audio calls:
 ```javascript
 {
     video: {
-        facingMode: currentFacingMode
+        facingMode: currentFacingMode,
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate: { ideal: 30, max: 30 }
     },
-    audio: false
+    audio: true
 }
 ```
 
