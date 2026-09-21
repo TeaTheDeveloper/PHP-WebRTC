@@ -1,35 +1,12 @@
 <?php
-    declare(strict_types=1);
 
     const MESSAGE_FILE_PREFIX = '.webrtc_room_';
     const MESSAGE_DIR = __DIR__ . '/data/';
     const ROOM_PATTERN = '/^[a-zA-Z0-9_-]{3,64}$/';
     const MESSAGE_TTL = 300;
 
-    function jsonResponse(array $data, int $status = 200): void {
-        http_response_code($status);
-        header('Content-Type: application/json; charset=utf-8');
-        echo json_encode($data, JSON_UNESCAPED_SLASHES);
-        exit;
-    }
-
-    function getRoom(): string {
-        $room = $_GET['room'] ?? $_POST['room'] ?? 'default';
-        if (!is_string($room) || !preg_match(ROOM_PATTERN, $room)) {
-            jsonResponse(['ok' => false, 'error' => 'Invalid room.'], 400);
-        }
-        return $room;
-    }
-
-    function getClientId(): string {
-        $client = $_GET['client'] ?? $_POST['client'] ?? '';
-        if (!is_string($client) || !preg_match('/^[a-zA-Z0-9_-]{8,100}$/', $client)) {
-            jsonResponse(['ok' => false, 'error' => 'Invalid client ID.'], 400);
-        }
-        return $client;
-    }
-
-    function roomFile(string $room): string {
+    function roomFile(string $room): string
+    {
         if (!is_dir(MESSAGE_DIR)) {
             mkdir(MESSAGE_DIR, 0755, true);
         }
@@ -37,792 +14,2042 @@
         return MESSAGE_DIR . MESSAGE_FILE_PREFIX . $room . '.json';
     }
 
-    /* ───────────────────────────── Signaling: send ───────────────────────────── */
+    function cleanMessages(array $messages): array
+    {
+        $cutoff = time() - MESSAGE_TTL;
 
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_GET['action'] ?? '') === 'send') {
+        return array_values(array_filter(
+            $messages,
+            static fn($message) =>
+                isset($message['time']) &&
+                $message['time'] >= $cutoff
+        ));
+    }
+
+    function readMessages(string $room): array
+    {
+        $file = roomFile($room);
+
+        if (!file_exists($file)) {
+            return [];
+        }
+
+        $content = file_get_contents($file);
+
+        if ($content === false || $content === '') {
+            return [];
+        }
+
+        $messages = json_decode($content, true);
+
+        if (!is_array($messages)) {
+            return [];
+        }
+
+        $messages = cleanMessages($messages);
+
+        file_put_contents(
+            $file,
+            json_encode($messages, JSON_UNESCAPED_SLASHES),
+            LOCK_EX
+        );
+
+        return $messages;
+    }
+
+    function writeMessages(string $room, array $messages): void
+    {
+        $file = roomFile($room);
+
+        file_put_contents(
+            $file,
+            json_encode($messages, JSON_UNESCAPED_SLASHES),
+            LOCK_EX
+        );
+    }
+
+    function getRoom(): ?string
+    {
+        $room = $_GET['room'] ?? null;
+
+        if (!is_string($room) || !preg_match(ROOM_PATTERN, $room)) {
+            return null;
+        }
+
+        return $room;
+    }
+
+    $action = $_GET['action'] ?? null;
+
+    if ($action === 'send') {
+        header('Content-Type: application/json; charset=utf-8');
+
         $room = getRoom();
-        $client = getClientId();
-        $raw = file_get_contents('php://input');
+        $client = $_GET['client'] ?? '';
 
-        if ($raw === false || trim($raw) === '') {
-            jsonResponse(['ok' => false, 'error' => 'Empty request.'], 400);
+        if (!$room || !is_string($client) || $client === '') {
+            http_response_code(400);
+            echo json_encode([
+                'success' => false,
+                'error' => 'Invalid room or client.'
+            ]);
+            exit;
         }
 
-        $input = json_decode($raw, true);
-        if (!is_array($input)) {
-            jsonResponse(['ok' => false, 'error' => 'Invalid JSON.'], 400);
+        $input = file_get_contents('php://input');
+        $payload = json_decode($input ?: '', true);
+
+        if (!is_array($payload)) {
+            http_response_code(400);
+            echo json_encode([
+                'success' => false,
+                'error' => 'Invalid JSON payload.'
+            ]);
+            exit;
         }
 
-        $event = $input['event'] ?? null;
-        $data = $input['data'] ?? null;
-        $allowed = ['join', 'offer', 'answer', 'candidate', 'leave'];
+        $event = $payload['event'] ?? null;
+        $data = $payload['data'] ?? null;
+
+        $allowed = [
+            'join',
+            'offer',
+            'answer',
+            'candidate',
+            'leave',
+            'decline'
+        ];
 
         if (!is_string($event) || !in_array($event, $allowed, true)) {
-            jsonResponse(['ok' => false, 'error' => 'Invalid signaling event.'], 400);
+            http_response_code(400);
+            echo json_encode([
+                'success' => false,
+                'error' => 'Invalid event.'
+            ]);
+            exit;
         }
 
-        $file = roomFile($room);
-        $messages = [];
-
-        if (is_file($file)) {
-            $contents = file_get_contents($file);
-            if ($contents !== false && trim($contents) !== '') {
-                $decoded = json_decode($contents, true);
-                if (is_array($decoded)) $messages = $decoded;
-            }
-        }
-
-        $cutoff = time() - MESSAGE_TTL;
-        $messages = array_values(array_filter($messages, static function ($message) use ($cutoff) {
-            return is_array($message)
-                && isset($message['time'])
-                && (int)$message['time'] >= $cutoff;
-        }));
+        $messages = readMessages($room);
 
         $messages[] = [
-            'id' => bin2hex(random_bytes(16)),
+            'id' => bin2hex(random_bytes(8)),
             'client' => $client,
             'event' => $event,
             'data' => $data,
             'time' => time()
         ];
 
-        if (file_put_contents(
-            $file,
-            json_encode($messages, JSON_UNESCAPED_SLASHES),
-            LOCK_EX
-        ) === false) {
-            jsonResponse(['ok' => false, 'error' => 'Unable to write signaling data.'], 500);
-        }
+        writeMessages($room, $messages);
 
-        jsonResponse(['ok' => true]);
+        echo json_encode([
+            'success' => true
+        ]);
+
+        exit;
     }
 
-    /* ───────────────────────────── Signaling: poll ───────────────────────────── */
+    if ($action === 'poll') {
+        header('Content-Type: application/json; charset=utf-8');
 
-    if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'poll') {
         $room = getRoom();
-        $client = getClientId();
-        $file = roomFile($room);
+        $client = $_GET['client'] ?? '';
 
-        if (!is_file($file)) {
-            jsonResponse(['ok' => true, 'messages' => []]);
+        if (!$room || !is_string($client) || $client === '') {
+            http_response_code(400);
+            echo json_encode([
+                'success' => false,
+                'error' => 'Invalid room or client.'
+            ]);
+            exit;
         }
 
-        $contents = file_get_contents($file);
-        if ($contents === false || trim($contents) === '') {
-            jsonResponse(['ok' => true, 'messages' => []]);
-        }
+        $messages = readMessages($room);
 
-        $messages = json_decode($contents, true);
-        if (!is_array($messages)) {
-            jsonResponse(['ok' => true, 'messages' => []]);
-        }
+        $messages = array_values(array_filter(
+            $messages,
+            static fn($message) =>
+                isset($message['client']) &&
+                $message['client'] !== $client
+        ));
 
-        $cutoff = time() - MESSAGE_TTL;
+        echo json_encode([
+            'success' => true,
+            'messages' => $messages
+        ]);
 
-        $messages = array_values(array_filter($messages, static function ($message) use ($client, $cutoff) {
-            return is_array($message)
-                && isset($message['client'], $message['time'])
-                && $message['client'] !== $client
-                && (int)$message['time'] >= $cutoff;
-        }));
-
-        jsonResponse(['ok' => true, 'messages' => $messages]);
+        exit;
     }
 
-    /* ───────────────────────────── Page ───────────────────────────── */
 
-    $room = isset($_GET['room']) && is_string($_GET['room']) && preg_match(ROOM_PATTERN, $_GET['room'])
+    /*
+    |--------------------------------------------------------------------------
+    | Generate a unique room/call ID for a new call
+    |--------------------------------------------------------------------------
+    */
+
+    $room = isset($_GET['room']) &&
+            is_string($_GET['room']) &&
+            preg_match(ROOM_PATTERN, $_GET['room'])
         ? $_GET['room']
-        : 'default';
+        : 'call_' . bin2hex(random_bytes(8));
 
     ?>
     <!DOCTYPE html>
     <html lang="en">
     <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-    <meta name="theme-color" content="#050507">
-    <title>PeerCall</title>
+        <meta charset="UTF-8">
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+        >
 
-    <style>
-    *{box-sizing:border-box}
-    html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#050507;color:#fff;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-    body{user-select:none;-webkit-user-select:none}
-    button{font:inherit;border:0}
-    .app{position:relative;width:100%;height:100dvh;min-height:100vh;background:#050507;overflow:hidden}
-    .video-stage{position:absolute;inset:0;background:#08080b}
-    video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#08080b}
-    #localVideo{z-index:2;display:block;transform:scaleX(-1)}
-    #remoteVideo{z-index:1;display:none}
-    .remote-active #localVideo{position:absolute;top:24px;right:20px;left:auto;width:clamp(110px,20vw,230px);height:clamp(150px,28vw,300px);border:1px solid rgba(255,255,255,.18);border-radius:18px;box-shadow:0 14px 40px rgba(0,0,0,.4);object-fit:cover}
-    .remote-active #remoteVideo{display:block}
-    .remote-active .local-placeholder{display:none}
+        <title>PeerCall</title>
 
-    .vignette{position:absolute;z-index:3;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(0,0,0,.48),transparent 25%,transparent 62%,rgba(0,0,0,.7))}
-    .topbar{position:absolute;z-index:10;top:0;left:0;right:0;padding:18px max(18px,env(safe-area-inset-left)) 0 max(18px,env(safe-area-inset-right));display:flex;align-items:center;justify-content:space-between;pointer-events:none}
-    .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:-.02em}
-    .brand-mark{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.14);backdrop-filter:blur(16px);font-size:15px}
-    .brand span{font-size:15px}
-    .room-pill{display:flex;align-items:center;gap:8px;max-width:52vw;padding:8px 11px;border-radius:999px;background:rgba(10,10,14,.55);border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(16px);font-size:12px;color:rgba(255,255,255,.8);pointer-events:auto}
-    .room-name{max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff;font-weight:600}
-    .copy-btn{width:27px;height:27px;padding:0;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.1);color:#fff;cursor:pointer}
-    .copy-btn:hover{background:rgba(255,255,255,.18)}
+        <style>
+            @charset "utf-8";
 
-    .status-wrap{position:absolute;z-index:10;top:70px;left:50%;transform:translateX(-50%);pointer-events:none}
-    .status{display:flex;align-items:center;gap:8px;padding:7px 11px;border-radius:999px;background:rgba(10,10,14,.5);border:1px solid rgba(255,255,255,.1);backdrop-filter:blur(14px);font-size:12px;color:rgba(255,255,255,.78);white-space:nowrap}
-    .status-dot{width:7px;height:7px;border-radius:50%;background:#aaa}
-    .status-dot.ready{background:#62d98b}
-    .status-dot.calling{background:#f3c85b;box-shadow:0 0 0 4px rgba(243,200,91,.12)}
-    .status-dot.connected{background:#55e28a;box-shadow:0 0 0 4px rgba(85,226,138,.12)}
-    .status-dot.error{background:#ff6262}
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
 
-    .local-label{position:absolute;z-index:5;top:calc(24px + clamp(150px,28vw,300px) + 8px);right:20px;display:none;font-size:10px;color:rgba(255,255,255,.65)}
-    .remote-active .local-label{display:block}
+            :root {
+                --bg: #08080b;
+                --panel: rgba(18, 18, 23, .92);
+                --panel-border: rgba(255, 255, 255, .1);
+                --text: #fff;
+                --muted: rgba(255, 255, 255, .55);
+                --danger: #ff4d67;
+                --success: #35d07f;
+            }
 
-    .empty-state{position:absolute;z-index:4;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:30px;pointer-events:none}
-    .empty-inner{max-width:390px}
-    .camera-icon{width:68px;height:68px;margin:0 auto 18px;border-radius:22px;display:grid;place-items:center;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.1);font-size:26px}
-    .empty-state h1{margin:0 0 8px;font-size:clamp(22px,4vw,34px);letter-spacing:-.04em}
-    .empty-state p{margin:0;color:rgba(255,255,255,.55);font-size:14px;line-height:1.5}
-    .remote-active .empty-state{display:none}
+            html,
+            body {
+                width: 100%;
+                height: 100%;
+                overflow: hidden;
+                background: var(--bg);
+                color: var(--text);
+                font-family:
+                    Inter,
+                    ui-sans-serif,
+                    system-ui,
+                    -apple-system,
+                    BlinkMacSystemFont,
+                    "Segoe UI",
+                    sans-serif;
+            }
 
-    .bottom{position:absolute;z-index:10;left:0;right:0;bottom:0;padding:20px max(18px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(18px,env(safe-area-inset-left));display:flex;flex-direction:column;align-items:center;gap:14px}
-    .controls{display:flex;align-items:center;justify-content:center;gap:12px;padding:8px 10px;border-radius:22px;background:rgba(8,8,11,.68);border:1px solid rgba(255,255,255,.1);backdrop-filter:blur(20px);box-shadow:0 18px 50px rgba(0,0,0,.3)}
-    .control{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.1);color:#fff;cursor:pointer;transition:.18s transform,.18s background}
-    .control:hover{background:rgba(255,255,255,.17);transform:translateY(-1px)}
-    .control:active{transform:scale(.94)}
-    .control.primary{width:58px;height:58px;background:#fff;color:#08080b}
-    .control.danger{background:#e54848;color:#fff}
-    .control:disabled{opacity:.45;cursor:not-allowed;transform:none}
-    .control svg{width:21px;height:21px;fill:currentColor}
-    .hint{font-size:11px;color:rgba(255,255,255,.42);text-align:center}
+            body {
+                position: relative;
+            }
 
-    .toast{position:fixed;z-index:300;left:50%;bottom:105px;transform:translate(-50%,20px);padding:9px 13px;border-radius:999px;background:rgba(20,20,24,.9);border:1px solid rgba(255,255,255,.12);color:#fff;font-size:12px;opacity:0;pointer-events:none;transition:.2s}
-    .toast.show{opacity:1;transform:translate(-50%,0)}
+            button {
+                border: 0;
+                font: inherit;
+            }
 
-    .error{position:absolute;z-index:200;left:18px;right:18px;bottom:115px;display:none;padding:13px 15px;border-radius:14px;background:rgba(155,25,25,.9);border:1px solid rgba(255,130,130,.2);font-size:13px;line-height:1.4}
+            .app {
+                position: relative;
+                width: 100%;
+                height: 100dvh;
+                overflow: hidden;
+                background:
+                    radial-gradient(
+                        circle at 50% 30%,
+                        rgba(255,255,255,.045),
+                        transparent 40%
+                    ),
+                    #08080b;
+            }
 
-    @media(max-width:600px){
-        .topbar{padding-top:max(14px,env(safe-area-inset-top))}
-        .brand span{display:none}
-        .room-pill{max-width:58vw}
-        .status-wrap{top:64px}
-        .remote-active #localVideo{top:auto;right:14px;bottom:115px;width:108px;height:148px;border-radius:15px}
-        .local-label{top:auto;right:18px;bottom:101px;font-size:9px}
-        .bottom{padding-bottom:max(14px,env(safe-area-inset-bottom))}
-        .controls{gap:8px;padding:7px 8px;border-radius:20px}
-        .control{width:44px;height:44px}
-        .control.primary{width:54px;height:54px}
-        .hint{font-size:10px}
-    }
+            /*
+            |--------------------------------------------------------------------------
+            | Remote video
+            |--------------------------------------------------------------------------
+            */
 
-    @media(min-width:1000px){
-        .bottom{padding-bottom:28px}
-        .controls{gap:14px}
-    }
-    </style>
+            .remote-video {
+                position: absolute;
+                inset: 0;
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                background: #050507;
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Local video
+            |--------------------------------------------------------------------------
+            */
+
+            .local-video {
+                position: absolute;
+                z-index: 20;
+                top: 82px;
+                right: 24px;
+                width: min(260px, 27vw);
+                aspect-ratio: 16 / 9;
+                object-fit: cover;
+                background: #111116;
+                border: 1px solid rgba(255,255,255,.14);
+                border-radius: 18px;
+                box-shadow: 0 15px 45px rgba(0,0,0,.45);
+                transform: scaleX(-1);
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Top bar
+            |--------------------------------------------------------------------------
+            */
+
+            .topbar {
+                position: absolute;
+                z-index: 30;
+                top: 0;
+                left: 0;
+                right: 0;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding:
+                    max(20px, env(safe-area-inset-top))
+                    24px
+                    20px;
+                pointer-events: none;
+            }
+
+            .brand {
+                font-size: 18px;
+                font-weight: 700;
+                letter-spacing: -.03em;
+                pointer-events: auto;
+            }
+
+            .top-right {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                pointer-events: auto;
+            }
+
+            .room-pill,
+            .status-pill {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                min-height: 38px;
+                padding: 0 13px;
+                border: 1px solid var(--panel-border);
+                border-radius: 12px;
+                background: rgba(10,10,14,.72);
+                backdrop-filter: blur(14px);
+            }
+
+            .room-pill {
+                max-width: 260px;
+            }
+
+            .room-id {
+                max-width: 180px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                color: rgba(255,255,255,.68);
+                font-size: 12px;
+            }
+
+            .copy-button {
+                width: 28px;
+                height: 28px;
+                display: grid;
+                place-items: center;
+                border-radius: 8px;
+                background: rgba(255,255,255,.08);
+                color: #fff;
+                cursor: pointer;
+            }
+
+            .copy-button:hover {
+                background: rgba(255,255,255,.14);
+            }
+
+            .status-pill {
+                color: rgba(255,255,255,.65);
+                font-size: 12px;
+            }
+
+            .status-dot {
+                width: 7px;
+                height: 7px;
+                border-radius: 50%;
+                background: rgba(255,255,255,.35);
+            }
+
+            .status-pill.connected .status-dot {
+                background: var(--success);
+                box-shadow: 0 0 12px rgba(53,208,127,.7);
+            }
+
+            .status-pill.calling .status-dot {
+                background: #ffd45c;
+                box-shadow: 0 0 12px rgba(255,212,92,.7);
+            }
+
+            .status-pill.error .status-dot {
+                background: var(--danger);
+                box-shadow: 0 0 12px rgba(255,77,103,.7);
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Empty state
+            |--------------------------------------------------------------------------
+            */
+
+            .empty-state {
+                position: absolute;
+                z-index: 5;
+                inset: 0;
+                display: grid;
+                place-items: center;
+                padding: 100px 24px 170px;
+                text-align: center;
+                pointer-events: none;
+            }
+
+            .empty-content {
+                max-width: 420px;
+            }
+
+            .empty-icon {
+                width: 72px;
+                height: 72px;
+                margin: 0 auto 22px;
+                display: grid;
+                place-items: center;
+                border-radius: 22px;
+                background: rgba(255,255,255,.06);
+                border: 1px solid rgba(255,255,255,.08);
+                font-size: 28px;
+            }
+
+            .empty-state h1 {
+                margin-bottom: 10px;
+                font-size: clamp(26px, 5vw, 40px);
+                letter-spacing: -.045em;
+            }
+
+            .empty-state p {
+                color: var(--muted);
+                line-height: 1.6;
+                font-size: 14px;
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Controls
+            |--------------------------------------------------------------------------
+            */
+
+            .controls {
+                position: absolute;
+                z-index: 40;
+                left: 50%;
+                bottom: max(28px, env(safe-area-inset-bottom));
+                transform: translateX(-50%);
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 10px;
+                border: 1px solid rgba(255,255,255,.1);
+                border-radius: 20px;
+                background: rgba(12,12,16,.84);
+                backdrop-filter: blur(18px);
+                box-shadow: 0 20px 60px rgba(0,0,0,.4);
+            }
+
+            .control-button {
+                width: 48px;
+                height: 48px;
+                display: grid;
+                place-items: center;
+                border-radius: 14px;
+                background: rgba(255,255,255,.08);
+                color: #fff;
+                cursor: pointer;
+                transition:
+                    transform .15s ease,
+                    background .15s ease;
+            }
+
+            .control-button:hover {
+                background: rgba(255,255,255,.14);
+            }
+
+            .control-button:active {
+                transform: scale(.95);
+            }
+
+            .control-button.primary {
+                background: #fff;
+                color: #08080b;
+            }
+
+            .control-button.danger {
+                background: var(--danger);
+                color: #fff;
+            }
+
+            .control-button.hidden {
+                display: none;
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Error
+            |--------------------------------------------------------------------------
+            */
+
+            .error-message {
+                position: absolute;
+                z-index: 100;
+                left: 50%;
+                top: 85px;
+                transform: translateX(-50%);
+                display: none;
+                width: min(460px, calc(100% - 40px));
+                padding: 12px 16px;
+                border: 1px solid rgba(255,77,103,.3);
+                border-radius: 12px;
+                background: rgba(50,10,17,.92);
+                color: #ffb3bf;
+                font-size: 13px;
+                text-align: center;
+                backdrop-filter: blur(12px);
+            }
+
+            .error-message.show {
+                display: block;
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Toast
+            |--------------------------------------------------------------------------
+            */
+
+            .toast {
+                position: absolute;
+                z-index: 200;
+                left: 50%;
+                bottom: 110px;
+                transform: translate(-50%, 15px);
+                opacity: 0;
+                pointer-events: none;
+                padding: 11px 16px;
+                border: 1px solid rgba(255,255,255,.1);
+                border-radius: 12px;
+                background: rgba(20,20,25,.92);
+                color: rgba(255,255,255,.85);
+                font-size: 13px;
+                backdrop-filter: blur(14px);
+                transition:
+                    opacity .2s ease,
+                    transform .2s ease;
+            }
+
+            .toast.show {
+                opacity: 1;
+                transform: translate(-50%, 0);
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Incoming call
+            |--------------------------------------------------------------------------
+            */
+
+            .incoming-call {
+                position: fixed;
+                z-index: 250;
+                inset: 0;
+                display: none;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+                background: rgba(0,0,0,.55);
+                backdrop-filter: blur(12px);
+            }
+
+            .incoming-call.show {
+                display: flex;
+            }
+
+            .incoming-card {
+                width: min(360px, 100%);
+                padding: 28px;
+                text-align: center;
+                border: 1px solid rgba(255,255,255,.12);
+                border-radius: 24px;
+                background: rgba(18,18,23,.94);
+                box-shadow: 0 25px 80px rgba(0,0,0,.5);
+            }
+
+            .incoming-icon {
+                width: 64px;
+                height: 64px;
+                margin: 0 auto 18px;
+                display: grid;
+                place-items: center;
+                border-radius: 20px;
+                background: rgba(255,255,255,.09);
+                font-size: 25px;
+            }
+
+            .incoming-card h2 {
+                margin: 0 0 7px;
+                font-size: 22px;
+            }
+
+            .incoming-card p {
+                margin: 0 0 24px;
+                color: rgba(255,255,255,.55);
+                font-size: 14px;
+            }
+
+            .incoming-actions {
+                display: flex;
+                gap: 10px;
+            }
+
+            .incoming-actions button {
+                flex: 1;
+                height: 46px;
+                border-radius: 13px;
+                font-weight: 600;
+                cursor: pointer;
+            }
+
+            .decline-btn {
+                background: rgba(255,255,255,.08);
+                color: #fff;
+            }
+
+            .accept-btn {
+                background: #fff;
+                color: #08080b;
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Mobile
+            |--------------------------------------------------------------------------
+            */
+
+            @media (max-width: 700px) {
+                .topbar {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                }
+
+                .brand {
+                    font-size: 16px;
+                }
+
+                .status-pill {
+                    display: none;
+                }
+
+                .room-pill {
+                    max-width: 210px;
+                }
+
+                .room-id {
+                    max-width: 125px;
+                }
+
+                .local-video {
+                    top: auto;
+                    right: 16px;
+                    bottom: 105px;
+                    width: 34vw;
+                    min-width: 120px;
+                    border-radius: 14px;
+                }
+
+                .controls {
+                    bottom: max(18px, env(safe-area-inset-bottom));
+                    width: max-content;
+                }
+
+                .control-button {
+                    width: 46px;
+                    height: 46px;
+                }
+
+                .empty-state {
+                    padding-bottom: 150px;
+                }
+            }
+
+            @media (max-width: 430px) {
+                .room-pill {
+                    max-width: 165px;
+                }
+
+                .room-id {
+                    max-width: 85px;
+                }
+
+                .controls {
+                    gap: 8px;
+                    padding: 8px;
+                }
+
+                .control-button {
+                    width: 44px;
+                    height: 44px;
+                }
+            }
+        </style>
     </head>
 
     <body>
 
-    <div class="app" id="app">
+    <div class="app">
 
-        <div class="video-stage">
-            <video id="remoteVideo" autoplay playsinline></video>
-            <video id="localVideo" autoplay muted playsinline></video>
-            <div class="vignette"></div>
-        </div>
+        <video
+            id="remoteVideo"
+            class="remote-video"
+            autoplay
+            playsinline
+        ></video>
+
+        <video
+            id="localVideo"
+            class="local-video"
+            autoplay
+            muted
+            playsinline
+        ></video>
 
         <div class="topbar">
+
             <div class="brand">
-                <div class="brand-mark">P</div>
-                <span>PeerCall</span>
+                PeerCall
             </div>
 
-            <div class="room-pill">
-                <span>Room</span>
-                <span class="room-name" id="roomName"><?= htmlspecialchars($room, ENT_QUOTES, 'UTF-8') ?></span>
-                <button class="copy-btn" id="copyButton" title="Copy room link">
-                    <svg viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg>
-                </button>
+            <div class="top-right">
+
+                <div class="room-pill">
+
+                    <span class="room-id" id="roomId">
+                        <?= htmlspecialchars($room, ENT_QUOTES, 'UTF-8') ?>
+                    </span>
+
+                    <button
+                        class="copy-button"
+                        id="copyButton"
+                        type="button"
+                        title="Copy call link"
+                        aria-label="Copy call link"
+                    >
+                        ⧉
+                    </button>
+
+                </div>
+
+                <div class="status-pill" id="statusPill">
+
+                    <span class="status-dot"></span>
+
+                    <span id="statusText">
+                        Ready
+                    </span>
+
+                </div>
+
             </div>
+
         </div>
 
-        <div class="status-wrap">
-            <div class="status">
-                <span class="status-dot" id="statusDot"></span>
-                <span id="status">Starting camera...</span>
-            </div>
-        </div>
 
-        <div class="empty-state">
-            <div class="empty-inner">
-                <div class="camera-icon">⌁</div>
-                <h1>Ready for a private call</h1>
-                <p>Share this room with another device. Your video connects directly through WebRTC.</p>
-            </div>
-        </div>
+        <div class="empty-state" id="emptyState">
 
-        <div class="local-label">You</div>
+            <div class="empty-content">
 
-        <div class="error" id="error"></div>
+                <div class="empty-icon">
+                    ◉
+                </div>
 
-        <div class="bottom">
-            <div class="controls">
-                <button class="control" id="cameraButton" title="Toggle camera">
-                    <svg viewBox="0 0 24 24"><path d="M17 10.5V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3.5l4 2.5v-8l-4 2.5z"/></svg>
-                </button>
+                <h1>
+                    Ready when you are
+                </h1>
 
-                <button class="control primary" id="callButton" title="Start call">
-                    <svg viewBox="0 0 24 24"><path d="M6.62 10.79a15.46 15.46 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.01-.24c1.12.37 2.33.56 3.58.56a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1C10.72 21 3 13.28 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.19 2.46.56 3.58a1 1 0 0 1-.25 1.01l-2.19 2.2z"/></svg>
-                </button>
+                <p id="hint">
+                    Share the call link with someone, then start a video call.
+                </p>
 
-                <button class="control danger" id="hangupButton" title="End call" style="display:none">
-                    <svg viewBox="0 0 24 24"><path d="M6.62 10.79a15.46 15.46 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.01-.24c1.12.37 2.33.56 3.58.56a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1C10.72 21 3 13.28 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.19 2.46.56 3.58a1 1 0 0 1-.25 1.01l-2.19 2.2z" transform="rotate(135 12 12)"/></svg>
-                </button>
-
-                <button class="control" id="flipButton" title="Switch camera">
-                    <svg viewBox="0 0 24 24"><path d="M17.65 6.35A7.95 7.95 0 0 0 12 4V1L8 5l4 4V6c1.66 0 3.14.69 4.22 1.78A5.94 5.94 0 0 1 18 12h2a7.97 7.97 0 0 0-2.35-5.65zM6 12c0-1.66.69-3.14 1.78-4.22L6.37 6.37A7.95 7.95 0 0 0 4 12c0 2.21.9 4.21 2.35 5.65A7.95 7.95 0 0 0 12 20v3l4-4-4-4v3c-1.66 0-3.14-.69-4.22-1.78A5.94 5.94 0 0 1 6 12z"/></svg>
-                </button>
             </div>
 
-            <div class="hint" id="hint">Waiting for another person to join</div>
         </div>
 
-        <div class="toast" id="toast">Copied</div>
+
+        <div class="error-message" id="errorMessage"></div>
+
+
+        <div class="controls">
+
+            <button
+                class="control-button hidden"
+                id="cameraButton"
+                type="button"
+                title="Toggle camera"
+                aria-label="Toggle camera"
+            >
+                ◉
+            </button>
+
+            <button
+                class="control-button primary"
+                id="callButton"
+                type="button"
+                title="Start call"
+                aria-label="Start call"
+            >
+                ☎
+            </button>
+
+            <button
+                class="control-button danger hidden"
+                id="hangupButton"
+                type="button"
+                title="Hang up"
+                aria-label="Hang up"
+            >
+                ✕
+            </button>
+
+            <button
+                class="control-button hidden"
+                id="flipButton"
+                type="button"
+                title="Flip camera"
+                aria-label="Flip camera"
+            >
+                ↻
+            </button>
+
+        </div>
+
+
+        <!-- Incoming call -->
+
+        <div class="incoming-call" id="incomingCall">
+
+            <div class="incoming-card">
+
+                <div class="incoming-icon">
+                    ☎
+                </div>
+
+                <h2>
+                    Incoming call
+                </h2>
+
+                <p>
+                    Someone is calling you.
+                </p>
+
+                <div class="incoming-actions">
+
+                    <button
+                        class="decline-btn"
+                        id="declineButton"
+                        type="button"
+                    >
+                        Decline
+                    </button>
+
+                    <button
+                        class="accept-btn"
+                        id="acceptButton"
+                        type="button"
+                    >
+                        Accept
+                    </button>
+
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <div class="toast" id="toast"></div>
 
     </div>
 
+
     <script>
-    'use strict';
+        const ROOM = <?= json_encode($room) ?>;
 
-    const ROOM = <?= json_encode($room) ?>;
-    const SIGNAL_BASE = window.location.pathname;
-    const POLL_INTERVAL = 500;
+        /*
+        |--------------------------------------------------------------------------
+        | Put the generated room ID into the URL
+        |--------------------------------------------------------------------------
+        */
 
-    const ICE_CONFIG = {
-        iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun.cloudflare.com:3478' }
-        ]
-    };
+        if (!new URLSearchParams(window.location.search).get('room')) {
+            const url = new URL(window.location.href);
+            url.searchParams.set('room', ROOM);
+            window.history.replaceState({}, '', url);
+        }
 
-    const app = document.getElementById('app');
-    const localVideo = document.getElementById('localVideo');
-    const remoteVideo = document.getElementById('remoteVideo');
-    const statusEl = document.getElementById('status');
-    const statusDot = document.getElementById('statusDot');
-    const hint = document.getElementById('hint');
-    const errorEl = document.getElementById('error');
-    const callButton = document.getElementById('callButton');
-    const hangupButton = document.getElementById('hangupButton');
-    const cameraButton = document.getElementById('cameraButton');
-    const flipButton = document.getElementById('flipButton');
-    const copyButton = document.getElementById('copyButton');
-    const toast = document.getElementById('toast');
 
-    function clientId() {
-        if (crypto?.randomUUID) return crypto.randomUUID().replace(/-/g, '');
-        return Date.now().toString(36) + Math.random().toString(36).slice(2);
-    }
+        /*
+        |--------------------------------------------------------------------------
+        | Client identity
+        |--------------------------------------------------------------------------
+        */
 
-    const CLIENT_ID = clientId();
+        const CLIENT_ID =
+            (crypto.randomUUID)
+                ? crypto.randomUUID()
+                : Math.random().toString(36).slice(2) + Date.now();
 
-    let localStream = null;
-    let peerConnection = null;
-    let pollTimer = null;
-    let polling = false;
-    let processed = new Set();
-    let pendingCandidates = [];
-    let remoteDescriptionReady = false;
-    let isCalling = false;
-    let isConnected = false;
-    let currentFacingMode = 'user';
 
-    function setStatus(message, type = '') {
-        statusEl.textContent = message;
-        statusDot.className = 'status-dot ' + type;
-    }
+        /*
+        |--------------------------------------------------------------------------
+        | DOM
+        |--------------------------------------------------------------------------
+        */
 
-    function showError(message) {
-        console.error(message);
-        errorEl.textContent = message;
-        errorEl.style.display = 'block';
-        setStatus('Something went wrong', 'error');
-    }
+        const remoteVideo = document.getElementById('remoteVideo');
+        const localVideo = document.getElementById('localVideo');
 
-    function hideError() {
-        errorEl.style.display = 'none';
-    }
+        const callButton = document.getElementById('callButton');
+        const hangupButton = document.getElementById('hangupButton');
+        const cameraButton = document.getElementById('cameraButton');
+        const flipButton = document.getElementById('flipButton');
 
-    function showToast(message) {
-        toast.textContent = message;
-        toast.classList.add('show');
-        setTimeout(() => toast.classList.remove('show'), 1600);
-    }
+        const copyButton = document.getElementById('copyButton');
 
-    async function sendSignal(event, data = null) {
-        const response = await fetch(
-            `${SIGNAL_BASE}?action=send&room=${encodeURIComponent(ROOM)}&client=${encodeURIComponent(CLIENT_ID)}`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ event, data })
-            }
-        );
+        const statusPill = document.getElementById('statusPill');
+        const statusText = document.getElementById('statusText');
 
-        if (!response.ok) throw new Error(`Signaling HTTP ${response.status}`);
+        const emptyState = document.getElementById('emptyState');
+        const hint = document.getElementById('hint');
 
-        const result = await response.json();
+        const errorMessage = document.getElementById('errorMessage');
+        const toast = document.getElementById('toast');
 
-        if (!result.ok) throw new Error(result.error || 'Signaling failed');
+        const incomingCall = document.getElementById('incomingCall');
+        const acceptButton = document.getElementById('acceptButton');
+        const declineButton = document.getElementById('declineButton');
 
-        return result;
-    }
 
-    async function poll() {
-        if (polling) return;
-        polling = true;
+        /*
+        |--------------------------------------------------------------------------
+        | WebRTC state
+        |--------------------------------------------------------------------------
+        */
 
-        try {
-            const response = await fetch(
-                `${SIGNAL_BASE}?action=poll&room=${encodeURIComponent(ROOM)}&client=${encodeURIComponent(CLIENT_ID)}&_=${Date.now()}`,
-                { cache: 'no-store' }
-            );
+        let localStream = null;
+        let peerConnection = null;
 
-            if (!response.ok) throw new Error(`Polling HTTP ${response.status}`);
+        let pollTimer = null;
+        let processedMessages = new Set();
 
-            const result = await response.json();
+        let pendingCandidates = [];
+        let remoteDescriptionReady = false;
 
-            if (result.ok && Array.isArray(result.messages)) {
-                for (const message of result.messages) {
-                    await processMessage(message);
+        let isCalling = false;
+        let isConnected = false;
+
+        let pendingOffer = null;
+        let incomingCaller = false;
+
+        let currentFacingMode = 'user';
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | ICE servers
+        |--------------------------------------------------------------------------
+        */
+
+        const ICE_SERVERS = {
+            iceServers: [
+                {
+                    urls: [
+                        'stun:stun.l.google.com:19302',
+                        'stun:stun1.l.google.com:19302'
+                    ]
+                },
+                {
+                    urls: 'stun:stun.cloudflare.com:3478'
                 }
-            }
-        } catch (error) {
-            console.error('Polling:', error);
-        } finally {
-            polling = false;
-            pollTimer = setTimeout(poll, POLL_INTERVAL);
-        }
-    }
-
-    async function processMessage(message) {
-        if (!message?.id || processed.has(message.id)) return;
-
-        processed.add(message.id);
-
-        if (processed.size > 500) {
-            processed.delete(processed.values().next().value);
-        }
-
-        console.log('[SIGNAL]', message.event);
-
-        switch (message.event) {
-            case 'join':
-                if (!isCalling && !isConnected) await createOffer();
-                break;
-            case 'offer':
-                await handleOffer(message.data);
-                break;
-            case 'answer':
-                await handleAnswer(message.data);
-                break;
-            case 'candidate':
-                await handleCandidate(message.data);
-                break;
-            case 'leave':
-                handleLeave();
-                break;
-        }
-    }
-
-    function createPeerConnection() {
-        if (peerConnection) return peerConnection;
-
-        peerConnection = new RTCPeerConnection(ICE_CONFIG);
-
-        if (localStream) {
-            localStream.getTracks().forEach(track => {
-                peerConnection.addTrack(track, localStream);
-            });
-        }
-
-        peerConnection.onicecandidate = async event => {
-            if (!event.candidate) return;
-
-            try {
-                await sendSignal('candidate', event.candidate.toJSON());
-            } catch (error) {
-                console.error('ICE send:', error);
-            }
+            ]
         };
 
-        peerConnection.ontrack = async event => {
-            remoteVideo.srcObject = event.streams?.[0] || remoteVideo.srcObject;
 
-            if (!remoteVideo.srcObject && event.track) {
-                remoteVideo.srcObject = new MediaStream([event.track]);
+        /*
+        |--------------------------------------------------------------------------
+        | UI helpers
+        |--------------------------------------------------------------------------
+        */
+
+        function setStatus(text, state = '') {
+
+            statusText.textContent = text;
+
+            statusPill.classList.remove(
+                'connected',
+                'calling',
+                'error'
+            );
+
+            if (state) {
+                statusPill.classList.add(state);
             }
+        }
 
-            app.classList.add('remote-active');
+
+        function showError(message) {
+
+            errorMessage.textContent = message;
+            errorMessage.classList.add('show');
+
+            setStatus('Error', 'error');
+        }
+
+
+        function hideError() {
+
+            errorMessage.textContent = '';
+            errorMessage.classList.remove('show');
+        }
+
+
+        function showToast(message) {
+
+            toast.textContent = message;
+            toast.classList.add('show');
+
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 2200);
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Camera
+        |--------------------------------------------------------------------------
+        */
+
+        async function startCamera() {
+
+            if (localStream) {
+                return localStream;
+            }
 
             try {
-                await remoteVideo.play();
-            } catch (_) {}
 
-            setStatus('Connected', 'connected');
-            hint.textContent = 'Peer-to-peer connection active';
-        };
-
-        peerConnection.onconnectionstatechange = () => {
-            if (!peerConnection) return;
-
-            const state = peerConnection.connectionState;
-
-            if (state === 'connecting') {
-                setStatus('Connecting...', 'calling');
-            } else if (state === 'connected') {
-                isConnected = true;
-                setStatus('Connected', 'connected');
-                hint.textContent = 'Peer-to-peer connection active';
-                callButton.style.display = 'none';
-                hangupButton.style.display = 'grid';
-            } else if (state === 'disconnected') {
-                isConnected = false;
-                setStatus('Connection interrupted', 'calling');
-            } else if (state === 'failed') {
-                isConnected = false;
-                setStatus('Connection failed', 'error');
-                hint.textContent = 'Try starting the call again';
-            } else if (state === 'closed') {
-                isConnected = false;
-                setStatus('Call ended');
-            }
-        };
-
-        return peerConnection;
-    }
-
-    async function createOffer() {
-        if (isCalling || isConnected) return;
-
-        isCalling = true;
-        hideError();
-        setStatus('Calling...', 'calling');
-        hint.textContent = 'Connecting to the other device';
-
-        try {
-            const pc = createPeerConnection();
-            const offer = await pc.createOffer();
-
-            await pc.setLocalDescription(offer);
-            await waitForIce(pc);
-
-            await sendSignal('offer', pc.localDescription);
-        } catch (error) {
-            isCalling = false;
-            showError('Could not start the call: ' + error.message);
-        }
-    }
-
-    async function handleOffer(offer) {
-        try {
-            hideError();
-            setStatus('Incoming call...', 'calling');
-            hint.textContent = 'Accepting peer connection';
-
-            const pc = createPeerConnection();
-
-            await pc.setRemoteDescription(
-                new RTCSessionDescription(offer)
-            );
-
-            remoteDescriptionReady = true;
-            await flushCandidates();
-
-            const answer = await pc.createAnswer();
-
-            await pc.setLocalDescription(answer);
-            await waitForIce(pc);
-
-            await sendSignal('answer', pc.localDescription);
-        } catch (error) {
-            showError('Could not answer the call: ' + error.message);
-        }
-    }
-
-    async function handleAnswer(answer) {
-        if (!peerConnection) return;
-
-        try {
-            await peerConnection.setRemoteDescription(
-                new RTCSessionDescription(answer)
-            );
-
-            remoteDescriptionReady = true;
-            await flushCandidates();
-
-            setStatus('Connecting...', 'calling');
-        } catch (error) {
-            showError('Could not process the answer: ' + error.message);
-        }
-    }
-
-    async function handleCandidate(data) {
-        if (!data) return;
-
-        const candidate = new RTCIceCandidate(data);
-
-        if (!peerConnection || !remoteDescriptionReady) {
-            pendingCandidates.push(candidate);
-            return;
-        }
-
-        try {
-            await peerConnection.addIceCandidate(candidate);
-        } catch (error) {
-            console.error('ICE candidate:', error);
-        }
-    }
-
-    async function flushCandidates() {
-        if (!peerConnection) return;
-
-        while (pendingCandidates.length) {
-            try {
-                await peerConnection.addIceCandidate(
-                    pendingCandidates.shift()
-                );
-            } catch (error) {
-                console.error('Pending ICE:', error);
-            }
-        }
-    }
-
-    function waitForIce(pc) {
-        return new Promise(resolve => {
-            if (pc.iceGatheringState === 'complete') {
-                resolve();
-                return;
-            }
-
-            const check = () => {
-                if (pc.iceGatheringState === 'complete') {
-                    pc.removeEventListener('icegatheringstatechange', check);
-                    resolve();
-                }
-            };
-
-            pc.addEventListener('icegatheringstatechange', check);
-            setTimeout(resolve, 5000);
-        });
-    }
-
-    function handleLeave() {
-        if (peerConnection) {
-            peerConnection.close();
-            peerConnection = null;
-        }
-
-        remoteVideo.srcObject = null;
-        app.classList.remove('remote-active');
-
-        remoteDescriptionReady = false;
-        pendingCandidates = [];
-        isConnected = false;
-        isCalling = false;
-
-        callButton.style.display = 'grid';
-        hangupButton.style.display = 'none';
-
-        setStatus('Waiting for another person...');
-        hint.textContent = 'Waiting for another person to join';
-    }
-
-    async function hangUp() {
-        try {
-            await sendSignal('leave');
-        } catch (_) {}
-
-        handleLeave();
-    }
-
-    async function startCamera() {
-        if (!navigator.mediaDevices?.getUserMedia) {
-            throw new Error(
-                'Camera access requires HTTPS or localhost.'
-            );
-        }
-
-        localStream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
-                facingMode: currentFacingMode
-            },
-            audio: false
-        });
-
-        localVideo.srcObject = localStream;
-        await localVideo.play();
-
-        setStatus('Ready', 'ready');
-    }
-
-    async function switchCamera() {
-        if (!localStream) return;
-
-        const videoTrack = localStream.getVideoTracks()[0];
-        if (!videoTrack) return;
-
-        currentFacingMode =
-            currentFacingMode === 'user'
-                ? 'environment'
-                : 'user';
-
-        try {
-            const newStream =
-                await navigator.mediaDevices.getUserMedia({
+                localStream = await navigator.mediaDevices.getUserMedia({
                     video: {
                         facingMode: currentFacingMode
                     },
                     audio: false
                 });
 
-            const newTrack =
-                newStream.getVideoTracks()[0];
+                localVideo.srcObject = localStream;
 
-            const oldTrack =
-                localStream.getVideoTracks()[0];
+                cameraButton.classList.remove('hidden');
+                flipButton.classList.remove('hidden');
 
-            const sender =
-                peerConnection
-                    ?.getSenders()
-                    .find(s => s.track?.kind === 'video');
+                return localStream;
 
-            if (sender) {
-                await sender.replaceTrack(newTrack);
+            } catch (error) {
+
+                showError(
+                    'Camera access failed. Please allow camera permission and try again.'
+                );
+
+                throw error;
+            }
+        }
+
+
+        async function flipCamera() {
+
+            if (!localStream) {
+                return;
             }
 
-            oldTrack?.stop();
-
-            localStream.removeTrack(oldTrack);
-            localStream.addTrack(newTrack);
-
-            localVideo.srcObject = localStream;
-        } catch (error) {
-            currentFacingMode =
+            const newFacingMode =
                 currentFacingMode === 'user'
                     ? 'environment'
                     : 'user';
 
-            console.error(
-                'Camera switch:',
-                error
-            );
-        }
-    }
-
-    function toggleCamera() {
-        const track =
-            localStream?.getVideoTracks()[0];
-
-        if (!track) return;
-
-        track.enabled = !track.enabled;
-
-        cameraButton.style.opacity =
-            track.enabled ? '1' : '.5';
-
-        showToast(
-            track.enabled
-                ? 'Camera on'
-                : 'Camera off'
-        );
-    }
-
-    async function copyRoomLink() {
-        try {
-            await navigator.clipboard.writeText(
-                window.location.href
-            );
-
-            showToast('Room link copied');
-        } catch (_) {
-            showToast('Copy failed');
-        }
-    }
-
-    callButton.addEventListener(
-        'click',
-        createOffer
-    );
-
-    hangupButton.addEventListener(
-        'click',
-        hangUp
-    );
-
-    cameraButton.addEventListener(
-        'click',
-        toggleCamera
-    );
-
-    flipButton.addEventListener(
-        'click',
-        switchCamera
-    );
-
-    copyButton.addEventListener(
-        'click',
-        copyRoomLink
-    );
-
-    window.addEventListener(
-        'beforeunload',
-        () => {
             try {
-                navigator.sendBeacon(
-                    `${SIGNAL_BASE}?action=send&room=${encodeURIComponent(ROOM)}&client=${encodeURIComponent(CLIENT_ID)}`,
+
+                const newStream =
+                    await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            facingMode: newFacingMode
+                        },
+                        audio: false
+                    });
+
+                const newTrack = newStream.getVideoTracks()[0];
+
+                const oldTrack = localStream.getVideoTracks()[0];
+
+                if (peerConnection) {
+
+                    const sender = peerConnection
+                        .getSenders()
+                        .find(
+                            item =>
+                                item.track &&
+                                item.track.kind === 'video'
+                        );
+
+                    if (sender) {
+                        await sender.replaceTrack(newTrack);
+                    }
+                }
+
+                oldTrack.stop();
+
+                localStream.removeTrack(oldTrack);
+                localStream.addTrack(newTrack);
+
+                localVideo.srcObject = localStream;
+
+                currentFacingMode = newFacingMode;
+
+            } catch (error) {
+
+                showError(
+                    'Could not switch camera: ' + error.message
+                );
+            }
+        }
+
+
+        function toggleCamera() {
+
+            if (!localStream) {
+                return;
+            }
+
+            const track = localStream.getVideoTracks()[0];
+
+            if (!track) {
+                return;
+            }
+
+            track.enabled = !track.enabled;
+
+            cameraButton.textContent =
+                track.enabled ? '◉' : '○';
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | WebRTC connection
+        |--------------------------------------------------------------------------
+        */
+
+        function createPeerConnection() {
+
+            if (peerConnection) {
+                peerConnection.close();
+            }
+
+            peerConnection =
+                new RTCPeerConnection(ICE_SERVERS);
+
+            remoteDescriptionReady = false;
+            pendingCandidates = [];
+
+            if (localStream) {
+
+                localStream
+                    .getTracks()
+                    .forEach(track => {
+
+                        peerConnection.addTrack(
+                            track,
+                            localStream
+                        );
+
+                    });
+
+            }
+
+            peerConnection.ontrack = event => {
+
+                if (event.streams && event.streams[0]) {
+
+                    remoteVideo.srcObject =
+                        event.streams[0];
+
+                    emptyState.style.display = 'none';
+                }
+            };
+
+
+            peerConnection.onicecandidate = async event => {
+
+                if (!event.candidate) {
+                    return;
+                }
+
+                try {
+
+                    await sendSignal(
+                        'candidate',
+                        event.candidate
+                    );
+
+                } catch (error) {
+
+                    console.error(
+                        'ICE candidate error:',
+                        error
+                    );
+                }
+            };
+
+
+            peerConnection.onconnectionstatechange = () => {
+
+                const state =
+                    peerConnection.connectionState;
+
+                if (state === 'connected') {
+
+                    isConnected = true;
+                    isCalling = false;
+
+                    setStatus(
+                        'Connected',
+                        'connected'
+                    );
+
+                    hint.textContent =
+                        'Video call connected';
+
+                    callButton.classList.add('hidden');
+                    hangupButton.classList.remove('hidden');
+
+                    emptyState.style.display = 'none';
+
+                } else if (
+                    state === 'failed' ||
+                    state === 'disconnected' ||
+                    state === 'closed'
+                ) {
+
+                    isConnected = false;
+
+                    if (state !== 'closed') {
+
+                        setStatus('Disconnected');
+
+                        hint.textContent =
+                            'The connection was lost';
+                    }
+                }
+            };
+
+
+            peerConnection.oniceconnectionstatechange = () => {
+
+                if (
+                    peerConnection.iceConnectionState === 'failed'
+                ) {
+
+                    setStatus(
+                        'Connection failed',
+                        'error'
+                    );
+                }
+            };
+
+
+            return peerConnection;
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | ICE helper
+        |--------------------------------------------------------------------------
+        */
+
+        function waitForIce(pc) {
+
+            return new Promise(resolve => {
+
+                if (pc.iceGatheringState === 'complete') {
+                    resolve();
+                    return;
+                }
+
+                const timeout =
+                    setTimeout(resolve, 5000);
+
+                pc.addEventListener(
+                    'icegatheringstatechange',
+                    function handler() {
+
+                        if (
+                            pc.iceGatheringState === 'complete'
+                        ) {
+
+                            clearTimeout(timeout);
+
+                            pc.removeEventListener(
+                                'icegatheringstatechange',
+                                handler
+                            );
+
+                            resolve();
+                        }
+                    }
+                );
+            });
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Signaling
+        |--------------------------------------------------------------------------
+        */
+
+        async function sendSignal(event, data = null) {
+
+            const response =
+                await fetch(
+                    '?action=send&room=' +
+                    encodeURIComponent(ROOM) +
+                    '&client=' +
+                    encodeURIComponent(CLIENT_ID),
+                    {
+                        method: 'POST',
+
+                        headers: {
+                            'Content-Type':
+                                'application/json'
+                        },
+
+                        body: JSON.stringify({
+                            event,
+                            data
+                        })
+                    }
+                );
+
+            if (!response.ok) {
+                throw new Error(
+                    'Signaling request failed.'
+                );
+            }
+
+            return response.json();
+        }
+
+
+        async function poll() {
+
+            try {
+
+                const response =
+                    await fetch(
+                        '?action=poll&room=' +
+                        encodeURIComponent(ROOM) +
+                        '&client=' +
+                        encodeURIComponent(CLIENT_ID) +
+                        '&_=' +
+                        Date.now(),
+                        {
+                            cache: 'no-store'
+                        }
+                    );
+
+                if (!response.ok) {
+                    throw new Error('Polling failed.');
+                }
+
+                const result =
+                    await response.json();
+
+                if (
+                    result.success &&
+                    Array.isArray(result.messages)
+                ) {
+
+                    for (const message of result.messages) {
+
+                        if (!message.id) {
+                            continue;
+                        }
+
+                        if (processedMessages.has(message.id)) {
+                            continue;
+                        }
+
+                        processedMessages.add(message.id);
+
+                        await processMessage(message);
+                    }
+                }
+
+            } catch (error) {
+
+                console.error(
+                    'Polling error:',
+                    error
+                );
+            }
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Process signaling messages
+        |--------------------------------------------------------------------------
+        */
+
+        async function processMessage(message) {
+
+            switch (message.event) {
+
+                case 'join':
+
+                    if (
+                        !isCalling &&
+                        !isConnected
+                    ) {
+
+                        await createOffer();
+                    }
+
+                    break;
+
+
+                case 'offer':
+
+                    await handleOffer(
+                        message.data
+                    );
+
+                    break;
+
+
+                case 'answer':
+
+                    await handleAnswer(
+                        message.data
+                    );
+
+                    break;
+
+
+                case 'candidate':
+
+                    await handleCandidate(
+                        message.data
+                    );
+
+                    break;
+
+
+                case 'leave':
+
+                    handleLeave();
+
+                    break;
+
+
+                case 'decline':
+
+                    handleDecline();
+
+                    break;
+            }
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Start outgoing call
+        |--------------------------------------------------------------------------
+        */
+
+        async function createOffer() {
+
+            if (isCalling || isConnected) {
+                return;
+            }
+
+            try {
+
+                hideError();
+
+                isCalling = true;
+
+                setStatus(
+                    'Calling...',
+                    'calling'
+                );
+
+                hint.textContent =
+                    'Calling the other person...';
+
+                await startCamera();
+
+                const pc =
+                    createPeerConnection();
+
+                const offer =
+                    await pc.createOffer();
+
+                await pc.setLocalDescription(
+                    offer
+                );
+
+                await waitForIce(pc);
+
+                await sendSignal(
+                    'offer',
+                    pc.localDescription
+                );
+
+            } catch (error) {
+
+                isCalling = false;
+
+                showError(
+                    'Could not start the call: ' +
+                    error.message
+                );
+            }
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Incoming offer
+        |--------------------------------------------------------------------------
+        */
+
+        async function handleOffer(offer) {
+
+            if (!offer) {
+                return;
+            }
+
+            if (isConnected) {
+                return;
+            }
+
+            pendingOffer = offer;
+            incomingCaller = true;
+
+            setStatus(
+                'Incoming call...',
+                'calling'
+            );
+
+            hint.textContent =
+                'Someone is calling you';
+
+            incomingCall.classList.add('show');
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Accept incoming call
+        |--------------------------------------------------------------------------
+        */
+
+        async function acceptCall() {
+
+            if (!pendingOffer) {
+                return;
+            }
+
+            incomingCall.classList.remove('show');
+
+            try {
+
+                hideError();
+
+                setStatus(
+                    'Connecting...',
+                    'calling'
+                );
+
+                hint.textContent =
+                    'Accepting peer connection';
+
+                await startCamera();
+
+                const pc =
+                    createPeerConnection();
+
+                await pc.setRemoteDescription(
+                    new RTCSessionDescription(
+                        pendingOffer
+                    )
+                );
+
+                remoteDescriptionReady = true;
+
+                await flushCandidates();
+
+                const answer =
+                    await pc.createAnswer();
+
+                await pc.setLocalDescription(
+                    answer
+                );
+
+                await waitForIce(pc);
+
+                await sendSignal(
+                    'answer',
+                    pc.localDescription
+                );
+
+                pendingOffer = null;
+                incomingCaller = false;
+
+            } catch (error) {
+
+                pendingOffer = null;
+                incomingCaller = false;
+
+                showError(
+                    'Could not answer the call: ' +
+                    error.message
+                );
+            }
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Decline incoming call
+        |--------------------------------------------------------------------------
+        */
+
+        async function declineCall() {
+
+            pendingOffer = null;
+            incomingCaller = false;
+
+            incomingCall.classList.remove('show');
+
+            try {
+
+                await sendSignal('decline');
+
+            } catch (_) {
+                // Ignore signaling errors while declining.
+            }
+
+            setStatus('Call declined');
+
+            hint.textContent =
+                'Waiting for another person to join';
+
+            callButton.classList.remove('hidden');
+            hangupButton.classList.add('hidden');
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Handle answer
+        |--------------------------------------------------------------------------
+        */
+
+        async function handleAnswer(answer) {
+
+            if (!answer || !peerConnection) {
+                return;
+            }
+
+            try {
+
+                await peerConnection.setRemoteDescription(
+                    new RTCSessionDescription(answer)
+                );
+
+                remoteDescriptionReady = true;
+
+                await flushCandidates();
+
+            } catch (error) {
+
+                showError(
+                    'Could not establish the connection: ' +
+                    error.message
+                );
+            }
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | ICE candidates
+        |--------------------------------------------------------------------------
+        */
+
+        async function handleCandidate(candidate) {
+
+            if (!candidate) {
+                return;
+            }
+
+            if (
+                !peerConnection ||
+                !remoteDescriptionReady
+            ) {
+
+                pendingCandidates.push(candidate);
+
+                return;
+            }
+
+            try {
+
+                await peerConnection.addIceCandidate(
+                    new RTCIceCandidate(candidate)
+                );
+
+            } catch (error) {
+
+                console.error(
+                    'Could not add ICE candidate:',
+                    error
+                );
+            }
+        }
+
+
+        async function flushCandidates() {
+
+            if (
+                !peerConnection ||
+                !remoteDescriptionReady
+            ) {
+                return;
+            }
+
+            const candidates =
+                pendingCandidates;
+
+            pendingCandidates = [];
+
+            for (const candidate of candidates) {
+
+                try {
+
+                    await peerConnection.addIceCandidate(
+                        new RTCIceCandidate(candidate)
+                    );
+
+                } catch (error) {
+
+                    console.error(
+                        'Could not flush ICE candidate:',
+                        error
+                    );
+                }
+            }
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Declined call
+        |--------------------------------------------------------------------------
+        */
+
+        function handleDecline() {
+
+            isCalling = false;
+            isConnected = false;
+
+            pendingOffer = null;
+            incomingCaller = false;
+
+            incomingCall.classList.remove('show');
+
+            if (peerConnection) {
+
+                peerConnection.close();
+                peerConnection = null;
+            }
+
+            remoteDescriptionReady = false;
+            pendingCandidates = [];
+
+            setStatus('Call declined');
+
+            hint.textContent =
+                'The other person declined the call';
+
+            callButton.classList.remove('hidden');
+            hangupButton.classList.add('hidden');
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Remote peer left
+        |--------------------------------------------------------------------------
+        */
+
+        function handleLeave() {
+
+            isCalling = false;
+            isConnected = false;
+
+            pendingOffer = null;
+            incomingCaller = false;
+
+            incomingCall.classList.remove('show');
+
+            if (peerConnection) {
+
+                peerConnection.close();
+                peerConnection = null;
+            }
+
+            remoteDescriptionReady = false;
+            pendingCandidates = [];
+
+            remoteVideo.srcObject = null;
+
+            setStatus('Disconnected');
+
+            hint.textContent =
+                'The other person left the call';
+
+            callButton.classList.remove('hidden');
+            hangupButton.classList.add('hidden');
+
+            emptyState.style.display = 'grid';
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Hang up
+        |--------------------------------------------------------------------------
+        */
+
+        async function hangUp() {
+
+            try {
+                await sendSignal('leave');
+            } catch (_) {
+                // Ignore signaling errors during hangup.
+            }
+
+            if (peerConnection) {
+
+                peerConnection.close();
+                peerConnection = null;
+            }
+
+            remoteVideo.srcObject = null;
+
+            isCalling = false;
+            isConnected = false;
+
+            pendingOffer = null;
+            incomingCaller = false;
+
+            incomingCall.classList.remove('show');
+
+            remoteDescriptionReady = false;
+            pendingCandidates = [];
+
+            setStatus('Ready');
+
+            hint.textContent =
+                'Share the call link with someone, then start a video call.';
+
+            callButton.classList.remove('hidden');
+            hangupButton.classList.add('hidden');
+
+            emptyState.style.display = 'grid';
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Copy call URL
+        |--------------------------------------------------------------------------
+        */
+
+        async function copyRoomLink() {
+
+            try {
+
+                await navigator.clipboard.writeText(
+                    window.location.href
+                );
+
+                showToast(
+                    'Call link copied'
+                );
+
+            } catch (error) {
+
+                showToast(
+                    'Could not copy call link'
+                );
+            }
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Event listeners
+        |--------------------------------------------------------------------------
+        */
+
+        callButton.addEventListener(
+            'click',
+            createOffer
+        );
+
+        hangupButton.addEventListener(
+            'click',
+            hangUp
+        );
+
+        cameraButton.addEventListener(
+            'click',
+            toggleCamera
+        );
+
+        flipButton.addEventListener(
+            'click',
+            flipCamera
+        );
+
+        copyButton.addEventListener(
+            'click',
+            copyRoomLink
+        );
+
+        acceptButton.addEventListener(
+            'click',
+            acceptCall
+        );
+
+        declineButton.addEventListener(
+            'click',
+            declineCall
+        );
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Start
+        |--------------------------------------------------------------------------
+        */
+
+        async function start() {
+
+            setStatus('Ready');
+
+            hint.textContent =
+                'Share the call link with someone, then start a video call.';
+
+            pollTimer =
+                setInterval(
+                    poll,
+                    500
+                );
+
+            await poll();
+
+            try {
+
+                await sendSignal('join');
+
+            } catch (error) {
+
+                showError(
+                    'Could not join the call room: ' +
+                    error.message
+                );
+            }
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Cleanup
+        |--------------------------------------------------------------------------
+        */
+
+        window.addEventListener(
+            'beforeunload',
+            () => {
+
+                const payload =
                     JSON.stringify({
                         event: 'leave',
                         data: null
-                    })
-                );
-            } catch (_) {}
+                    });
 
-            if (pollTimer) clearTimeout(pollTimer);
-            if (peerConnection) peerConnection.close();
+                const url =
+                    '?action=send&room=' +
+                    encodeURIComponent(ROOM) +
+                    '&client=' +
+                    encodeURIComponent(CLIENT_ID);
 
-            localStream?.getTracks().forEach(
-                track => track.stop()
-            );
-        }
-    );
+                try {
 
-    async function start() {
-        try {
-            await startCamera();
-            poll();
+                    navigator.sendBeacon(
+                        url,
+                        new Blob(
+                            [payload],
+                            {
+                                type: 'application/json'
+                            }
+                        )
+                    );
 
-            await sendSignal('join');
+                } catch (_) {
+                    // Ignore cleanup errors.
+                }
+            }
+        );
 
-            setStatus(
-                'Waiting for another person...',
-                'ready'
-            );
-        } catch (error) {
-            showError(
-                error.message ||
-                'Unable to start the camera.'
-            );
-        }
-    }
 
-    start();
+        start();
     </script>
 
     </body>
