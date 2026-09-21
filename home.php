@@ -897,92 +897,71 @@
 
     <script>
         const ROOM = <?= json_encode($room) ?>;
-
         /*
         |--------------------------------------------------------------------------
         | Put the generated room ID into the URL
         |--------------------------------------------------------------------------
         */
-
         if (!new URLSearchParams(window.location.search).get('room')) {
             const url = new URL(window.location.href);
             url.searchParams.set('room', ROOM);
             window.history.replaceState({}, '', url);
         }
 
-
         /*
         |--------------------------------------------------------------------------
         | Client identity
         |--------------------------------------------------------------------------
         */
-
         const CLIENT_ID =
             (crypto.randomUUID)
                 ? crypto.randomUUID()
                 : Math.random().toString(36).slice(2) + Date.now();
-
 
         /*
         |--------------------------------------------------------------------------
         | DOM
         |--------------------------------------------------------------------------
         */
-
         const remoteVideo = document.getElementById('remoteVideo');
         const localVideo = document.getElementById('localVideo');
-
         const callButton = document.getElementById('callButton');
         const hangupButton = document.getElementById('hangupButton');
         const cameraButton = document.getElementById('cameraButton');
         const flipButton = document.getElementById('flipButton');
-
         const copyButton = document.getElementById('copyButton');
-
         const statusPill = document.getElementById('statusPill');
         const statusText = document.getElementById('statusText');
-
         const emptyState = document.getElementById('emptyState');
         const hint = document.getElementById('hint');
-
         const errorMessage = document.getElementById('errorMessage');
         const toast = document.getElementById('toast');
-
         const incomingCall = document.getElementById('incomingCall');
         const acceptButton = document.getElementById('acceptButton');
         const declineButton = document.getElementById('declineButton');
-
 
         /*
         |--------------------------------------------------------------------------
         | WebRTC state
         |--------------------------------------------------------------------------
         */
-
         let localStream = null;
         let peerConnection = null;
-
         let pollTimer = null;
         let processedMessages = new Set();
-
         let pendingCandidates = [];
         let remoteDescriptionReady = false;
-
         let isCalling = false;
         let isConnected = false;
-
         let pendingOffer = null;
         let incomingCaller = false;
-
         let currentFacingMode = 'user';
-
 
         /*
         |--------------------------------------------------------------------------
         | ICE servers
         |--------------------------------------------------------------------------
         */
-
         const ICE_SERVERS = {
             iceServers: [
                 {
@@ -997,122 +976,95 @@
             ]
         };
 
-
         /*
         |--------------------------------------------------------------------------
         | UI helpers
         |--------------------------------------------------------------------------
         */
-
         function setStatus(text, state = '') {
-
             statusText.textContent = text;
-
             statusPill.classList.remove(
                 'connected',
                 'calling',
                 'error'
             );
-
             if (state) {
                 statusPill.classList.add(state);
             }
         }
 
-
         function showError(message) {
-
             errorMessage.textContent = message;
             errorMessage.classList.add('show');
-
             setStatus('Error', 'error');
         }
 
-
         function hideError() {
-
             errorMessage.textContent = '';
             errorMessage.classList.remove('show');
         }
 
-
         function showToast(message) {
-
             toast.textContent = message;
             toast.classList.add('show');
-
             setTimeout(() => {
                 toast.classList.remove('show');
             }, 2200);
         }
-
 
         /*
         |--------------------------------------------------------------------------
         | Camera
         |--------------------------------------------------------------------------
         */
-
         async function startCamera() {
-
             if (localStream) {
                 return localStream;
             }
-
             try {
-
                 localStream = await navigator.mediaDevices.getUserMedia({
                     video: {
-                        facingMode: currentFacingMode
+                        facingMode: currentFacingMode,
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        frameRate: { ideal: 30, max: 30 }
                     },
-                    audio: false
+                    audio: true
                 });
-
                 localVideo.srcObject = localStream;
-
                 cameraButton.classList.remove('hidden');
                 flipButton.classList.remove('hidden');
-
                 return localStream;
-
             } catch (error) {
-
                 showError(
                     'Camera access failed. Please allow camera permission and try again.'
                 );
-
                 throw error;
             }
         }
 
-
         async function flipCamera() {
-
             if (!localStream) {
                 return;
             }
-
             const newFacingMode =
                 currentFacingMode === 'user'
                     ? 'environment'
                     : 'user';
-
             try {
-
                 const newStream =
                     await navigator.mediaDevices.getUserMedia({
                         video: {
-                            facingMode: newFacingMode
+                            facingMode: newFacingMode,
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 },
+                            frameRate: { ideal: 30, max: 30 }
                         },
-                        audio: false
+                        audio: true
                     });
-
                 const newTrack = newStream.getVideoTracks()[0];
-
                 const oldTrack = localStream.getVideoTracks()[0];
-
                 if (peerConnection) {
-
                     const sender = peerConnection
                         .getSenders()
                         .find(
@@ -1120,109 +1072,76 @@
                                 item.track &&
                                 item.track.kind === 'video'
                         );
-
                     if (sender) {
                         await sender.replaceTrack(newTrack);
                     }
                 }
-
                 oldTrack.stop();
-
                 localStream.removeTrack(oldTrack);
                 localStream.addTrack(newTrack);
-
                 localVideo.srcObject = localStream;
-
                 currentFacingMode = newFacingMode;
-
             } catch (error) {
-
                 showError(
                     'Could not switch camera: ' + error.message
                 );
             }
         }
 
-
         function toggleCamera() {
-
             if (!localStream) {
                 return;
             }
-
             const track = localStream.getVideoTracks()[0];
-
             if (!track) {
                 return;
             }
-
             track.enabled = !track.enabled;
-
             cameraButton.textContent =
                 track.enabled ? '◉' : '○';
         }
-
 
         /*
         |--------------------------------------------------------------------------
         | WebRTC connection
         |--------------------------------------------------------------------------
         */
-
         function createPeerConnection() {
-
             if (peerConnection) {
                 peerConnection.close();
             }
-
             peerConnection =
                 new RTCPeerConnection(ICE_SERVERS);
-
             remoteDescriptionReady = false;
             pendingCandidates = [];
-
             if (localStream) {
-
                 localStream
                     .getTracks()
                     .forEach(track => {
-
                         peerConnection.addTrack(
                             track,
                             localStream
                         );
-
                     });
-
             }
-
             peerConnection.ontrack = event => {
-
                 if (event.streams && event.streams[0]) {
-
                     remoteVideo.srcObject =
                         event.streams[0];
-
                     emptyState.style.display = 'none';
                 }
             };
 
-
             peerConnection.onicecandidate = async event => {
-
                 if (!event.candidate) {
                     return;
                 }
-
                 try {
-
                     await sendSignal(
                         'candidate',
                         event.candidate
                     );
-
                 } catch (error) {
-
                     console.error(
                         'ICE candidate error:',
                         error
@@ -1230,55 +1149,39 @@
                 }
             };
 
-
             peerConnection.onconnectionstatechange = () => {
-
                 const state =
                     peerConnection.connectionState;
-
                 if (state === 'connected') {
-
                     isConnected = true;
                     isCalling = false;
-
                     setStatus(
                         'Connected',
                         'connected'
                     );
-
                     hint.textContent =
                         'Video call connected';
-
                     callButton.classList.add('hidden');
                     hangupButton.classList.remove('hidden');
-
                     emptyState.style.display = 'none';
-
                 } else if (
                     state === 'failed' ||
                     state === 'disconnected' ||
                     state === 'closed'
                 ) {
-
                     isConnected = false;
-
                     if (state !== 'closed') {
-
                         setStatus('Disconnected');
-
                         hint.textContent =
                             'The connection was lost';
                     }
                 }
             };
 
-
             peerConnection.oniceconnectionstatechange = () => {
-
                 if (
                     peerConnection.iceConnectionState === 'failed'
                 ) {
-
                     setStatus(
                         'Connection failed',
                         'error'
@@ -1286,44 +1189,33 @@
                 }
             };
 
-
             return peerConnection;
         }
-
 
         /*
         |--------------------------------------------------------------------------
         | ICE helper
         |--------------------------------------------------------------------------
         */
-
         function waitForIce(pc) {
-
             return new Promise(resolve => {
-
                 if (pc.iceGatheringState === 'complete') {
                     resolve();
                     return;
                 }
-
                 const timeout =
                     setTimeout(resolve, 5000);
-
                 pc.addEventListener(
                     'icegatheringstatechange',
                     function handler() {
-
                         if (
                             pc.iceGatheringState === 'complete'
                         ) {
-
                             clearTimeout(timeout);
-
                             pc.removeEventListener(
                                 'icegatheringstatechange',
                                 handler
                             );
-
                             resolve();
                         }
                     }
@@ -1331,15 +1223,12 @@
             });
         }
 
-
         /*
         |--------------------------------------------------------------------------
         | Signaling
         |--------------------------------------------------------------------------
         */
-
         async function sendSignal(event, data = null) {
-
             const response =
                 await fetch(
                     '?action=send&room=' +
@@ -1348,33 +1237,26 @@
                     encodeURIComponent(CLIENT_ID),
                     {
                         method: 'POST',
-
                         headers: {
                             'Content-Type':
                                 'application/json'
                         },
-
                         body: JSON.stringify({
                             event,
                             data
                         })
                     }
                 );
-
             if (!response.ok) {
                 throw new Error(
                     'Signaling request failed.'
                 );
             }
-
             return response.json();
         }
 
-
         async function poll() {
-
             try {
-
                 const response =
                     await fetch(
                         '?action=poll&room=' +
@@ -1387,37 +1269,27 @@
                             cache: 'no-store'
                         }
                     );
-
                 if (!response.ok) {
                     throw new Error('Polling failed.');
                 }
-
                 const result =
                     await response.json();
-
                 if (
                     result.success &&
                     Array.isArray(result.messages)
                 ) {
-
                     for (const message of result.messages) {
-
                         if (!message.id) {
                             continue;
                         }
-
                         if (processedMessages.has(message.id)) {
                             continue;
                         }
-
                         processedMessages.add(message.id);
-
                         await processMessage(message);
                     }
                 }
-
             } catch (error) {
-
                 console.error(
                     'Polling error:',
                     error
@@ -1425,122 +1297,83 @@
             }
         }
 
-
         /*
         |--------------------------------------------------------------------------
         | Process signaling messages
         |--------------------------------------------------------------------------
         */
-
         async function processMessage(message) {
-
             switch (message.event) {
-
                 case 'join':
-
                     if (
                         !isCalling &&
                         !isConnected
                     ) {
-
                         await createOffer();
                     }
-
                     break;
 
-
                 case 'offer':
-
                     await handleOffer(
                         message.data
                     );
-
                     break;
 
-
                 case 'answer':
-
                     await handleAnswer(
                         message.data
                     );
-
                     break;
 
-
                 case 'candidate':
-
                     await handleCandidate(
                         message.data
                     );
-
                     break;
-
 
                 case 'leave':
-
                     handleLeave();
-
                     break;
 
-
                 case 'decline':
-
                     handleDecline();
-
                     break;
             }
         }
-
 
         /*
         |--------------------------------------------------------------------------
         | Start outgoing call
         |--------------------------------------------------------------------------
         */
-
         async function createOffer() {
-
             if (isCalling || isConnected) {
                 return;
             }
-
             try {
-
                 hideError();
-
                 isCalling = true;
-
                 setStatus(
                     'Calling...',
                     'calling'
                 );
-
                 hint.textContent =
                     'Calling the other person...';
-
                 await startCamera();
-
                 const pc =
                     createPeerConnection();
-
                 const offer =
                     await pc.createOffer();
-
                 await pc.setLocalDescription(
                     offer
                 );
-
                 await waitForIce(pc);
-
                 await sendSignal(
                     'offer',
                     pc.localDescription
                 );
-
             } catch (error) {
-
                 isCalling = false;
-
                 showError(
                     'Could not start the call: ' +
                     error.message
@@ -1548,101 +1381,72 @@
             }
         }
 
-
         /*
         |--------------------------------------------------------------------------
         | Incoming offer
         |--------------------------------------------------------------------------
         */
-
         async function handleOffer(offer) {
-
             if (!offer) {
                 return;
             }
-
             if (isConnected) {
                 return;
             }
-
             pendingOffer = offer;
             incomingCaller = true;
-
             setStatus(
                 'Incoming call...',
                 'calling'
             );
-
             hint.textContent =
                 'Someone is calling you';
-
             incomingCall.classList.add('show');
         }
-
 
         /*
         |--------------------------------------------------------------------------
         | Accept incoming call
         |--------------------------------------------------------------------------
         */
-
         async function acceptCall() {
-
             if (!pendingOffer) {
                 return;
             }
-
             incomingCall.classList.remove('show');
-
             try {
-
                 hideError();
-
                 setStatus(
                     'Connecting...',
                     'calling'
                 );
-
                 hint.textContent =
                     'Accepting peer connection';
-
                 await startCamera();
-
                 const pc =
                     createPeerConnection();
-
                 await pc.setRemoteDescription(
                     new RTCSessionDescription(
                         pendingOffer
                     )
                 );
-
                 remoteDescriptionReady = true;
-
                 await flushCandidates();
-
                 const answer =
                     await pc.createAnswer();
-
                 await pc.setLocalDescription(
                     answer
                 );
-
                 await waitForIce(pc);
-
                 await sendSignal(
                     'answer',
                     pc.localDescription
                 );
-
                 pendingOffer = null;
                 incomingCaller = false;
-
             } catch (error) {
-
                 pendingOffer = null;
                 incomingCaller = false;
-
                 showError(
                     'Could not answer the call: ' +
                     error.message
@@ -1650,62 +1454,43 @@
             }
         }
 
-
         /*
         |--------------------------------------------------------------------------
         | Decline incoming call
         |--------------------------------------------------------------------------
         */
-
         async function declineCall() {
-
             pendingOffer = null;
             incomingCaller = false;
-
             incomingCall.classList.remove('show');
-
             try {
-
                 await sendSignal('decline');
-
             } catch (_) {
                 // Ignore signaling errors while declining.
             }
-
             setStatus('Call declined');
-
             hint.textContent =
                 'Waiting for another person to join';
-
             callButton.classList.remove('hidden');
             hangupButton.classList.add('hidden');
         }
-
 
         /*
         |--------------------------------------------------------------------------
         | Handle answer
         |--------------------------------------------------------------------------
         */
-
         async function handleAnswer(answer) {
-
             if (!answer || !peerConnection) {
                 return;
             }
-
             try {
-
                 await peerConnection.setRemoteDescription(
                     new RTCSessionDescription(answer)
                 );
-
                 remoteDescriptionReady = true;
-
                 await flushCandidates();
-
             } catch (error) {
-
                 showError(
                     'Could not establish the connection: ' +
                     error.message
@@ -1713,37 +1498,27 @@
             }
         }
 
-
         /*
         |--------------------------------------------------------------------------
         | ICE candidates
         |--------------------------------------------------------------------------
         */
-
         async function handleCandidate(candidate) {
-
             if (!candidate) {
                 return;
             }
-
             if (
                 !peerConnection ||
                 !remoteDescriptionReady
             ) {
-
                 pendingCandidates.push(candidate);
-
                 return;
             }
-
             try {
-
                 await peerConnection.addIceCandidate(
                     new RTCIceCandidate(candidate)
                 );
-
             } catch (error) {
-
                 console.error(
                     'Could not add ICE candidate:',
                     error
@@ -1751,31 +1526,22 @@
             }
         }
 
-
         async function flushCandidates() {
-
             if (
                 !peerConnection ||
                 !remoteDescriptionReady
             ) {
                 return;
             }
-
             const candidates =
                 pendingCandidates;
-
             pendingCandidates = [];
-
             for (const candidate of candidates) {
-
                 try {
-
                     await peerConnection.addIceCandidate(
                         new RTCIceCandidate(candidate)
                     );
-
                 } catch (error) {
-
                     console.error(
                         'Could not flush ICE candidate:',
                         error
@@ -1784,222 +1550,159 @@
             }
         }
 
-
         /*
         |--------------------------------------------------------------------------
         | Declined call
         |--------------------------------------------------------------------------
         */
-
         function handleDecline() {
-
             isCalling = false;
             isConnected = false;
-
             pendingOffer = null;
             incomingCaller = false;
-
             incomingCall.classList.remove('show');
-
             if (peerConnection) {
-
                 peerConnection.close();
                 peerConnection = null;
             }
-
             remoteDescriptionReady = false;
             pendingCandidates = [];
-
             setStatus('Call declined');
-
             hint.textContent =
                 'The other person declined the call';
-
             callButton.classList.remove('hidden');
             hangupButton.classList.add('hidden');
         }
-
 
         /*
         |--------------------------------------------------------------------------
         | Remote peer left
         |--------------------------------------------------------------------------
         */
-
         function handleLeave() {
-
             isCalling = false;
             isConnected = false;
-
             pendingOffer = null;
             incomingCaller = false;
-
             incomingCall.classList.remove('show');
-
             if (peerConnection) {
-
                 peerConnection.close();
                 peerConnection = null;
             }
-
             remoteDescriptionReady = false;
             pendingCandidates = [];
-
             remoteVideo.srcObject = null;
-
             setStatus('Disconnected');
-
             hint.textContent =
                 'The other person left the call';
-
             callButton.classList.remove('hidden');
             hangupButton.classList.add('hidden');
-
             emptyState.style.display = 'grid';
         }
-
 
         /*
         |--------------------------------------------------------------------------
         | Hang up
         |--------------------------------------------------------------------------
         */
-
         async function hangUp() {
-
             try {
                 await sendSignal('leave');
             } catch (_) {
                 // Ignore signaling errors during hangup.
             }
-
             if (peerConnection) {
-
                 peerConnection.close();
                 peerConnection = null;
             }
-
             remoteVideo.srcObject = null;
-
             isCalling = false;
             isConnected = false;
-
             pendingOffer = null;
             incomingCaller = false;
-
             incomingCall.classList.remove('show');
-
             remoteDescriptionReady = false;
             pendingCandidates = [];
-
             setStatus('Ready');
-
             hint.textContent =
                 'Share the call link with someone, then start a video call.';
-
             callButton.classList.remove('hidden');
             hangupButton.classList.add('hidden');
-
             emptyState.style.display = 'grid';
         }
-
 
         /*
         |--------------------------------------------------------------------------
         | Copy call URL
         |--------------------------------------------------------------------------
         */
-
         async function copyRoomLink() {
-
             try {
-
                 await navigator.clipboard.writeText(
                     window.location.href
                 );
-
                 showToast(
                     'Call link copied'
                 );
-
             } catch (error) {
-
                 showToast(
                     'Could not copy call link'
                 );
             }
         }
 
-
         /*
         |--------------------------------------------------------------------------
         | Event listeners
         |--------------------------------------------------------------------------
         */
-
         callButton.addEventListener(
             'click',
             createOffer
         );
-
         hangupButton.addEventListener(
             'click',
             hangUp
         );
-
         cameraButton.addEventListener(
             'click',
             toggleCamera
         );
-
         flipButton.addEventListener(
             'click',
             flipCamera
         );
-
         copyButton.addEventListener(
             'click',
             copyRoomLink
         );
-
         acceptButton.addEventListener(
             'click',
             acceptCall
         );
-
         declineButton.addEventListener(
             'click',
             declineCall
         );
-
 
         /*
         |--------------------------------------------------------------------------
         | Start
         |--------------------------------------------------------------------------
         */
-
         async function start() {
-
             setStatus('Ready');
-
             hint.textContent =
                 'Share the call link with someone, then start a video call.';
-
             pollTimer =
                 setInterval(
                     poll,
-                    500
+                    1000
                 );
-
             await poll();
-
             try {
-
                 await sendSignal('join');
-
             } catch (error) {
-
                 showError(
                     'Could not join the call room: ' +
                     error.message
@@ -2007,31 +1710,25 @@
             }
         }
 
-
         /*
         |--------------------------------------------------------------------------
         | Cleanup
         |--------------------------------------------------------------------------
         */
-
         window.addEventListener(
             'beforeunload',
             () => {
-
                 const payload =
                     JSON.stringify({
                         event: 'leave',
                         data: null
                     });
-
                 const url =
                     '?action=send&room=' +
                     encodeURIComponent(ROOM) +
                     '&client=' +
                     encodeURIComponent(CLIENT_ID);
-
                 try {
-
                     navigator.sendBeacon(
                         url,
                         new Blob(
@@ -2041,13 +1738,11 @@
                             }
                         )
                     );
-
                 } catch (_) {
                     // Ignore cleanup errors.
                 }
             }
         );
-
 
         start();
     </script>
