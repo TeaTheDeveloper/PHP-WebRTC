@@ -1,0 +1,18 @@
+# WebRTC signaling data
+/data/*.json
+
+# Keep the data directory in Git
+!/data/.gitkeep
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
