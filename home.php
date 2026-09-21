@@ -815,6 +815,16 @@
             </button>
 
             <button
+                class="control-button hidden"
+                id="micButton"
+                type="button"
+                title="Toggle mic"
+                aria-label="Toggle mic"
+            >
+                🎤
+            </button>
+
+            <button
                 class="control-button primary"
                 id="callButton"
                 type="button"
@@ -930,6 +940,7 @@
         const cameraButton = document.getElementById('cameraButton');
         const flipButton = document.getElementById('flipButton');
         const copyButton = document.getElementById('copyButton');
+        const micButton = document.getElementById('micButton');
         const statusPill = document.getElementById('statusPill');
         const statusText = document.getElementById('statusText');
         const emptyState = document.getElementById('emptyState');
@@ -1034,6 +1045,7 @@
                 localVideo.srcObject = localStream;
                 cameraButton.classList.remove('hidden');
                 flipButton.classList.remove('hidden');
+                micButton.classList.remove('hidden');
                 return localStream;
             } catch (error) {
                 showError(
@@ -1099,6 +1111,20 @@
             track.enabled = !track.enabled;
             cameraButton.textContent =
                 track.enabled ? '◉' : '○';
+        }
+
+        function toggleMic() {
+            if (!localStream) {
+                return;
+            }
+            const track = localStream.getAudioTracks()[0];
+            if (!track) {
+                return;
+            }
+            track.enabled = !track.enabled;
+            micButton.textContent =
+                track.enabled ? '🎤' : '🔇';
+            // Optionally, you can change the button text or icon to reflect the mic state
         }
 
         /*
@@ -1667,6 +1693,10 @@
         cameraButton.addEventListener(
             'click',
             toggleCamera
+        );
+        micButton.addEventListener(
+            'click',
+            toggleMic
         );
         flipButton.addEventListener(
             'click',
