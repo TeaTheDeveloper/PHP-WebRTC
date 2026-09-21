@@ -264,9 +264,7 @@
                         #08080b;
                 }
 
-                ===============
-                | Remote video
-                ===============
+                /*=============== Remote video ===============*/
 
                 .remote-video {
                     position: absolute;
@@ -277,9 +275,7 @@
                     background: #050507;
                 }
 
-                ===============
-                | Local video
-                ===============
+                /*=============== Local video ===============*/
 
                 .local-video {
                     position: absolute;
@@ -296,9 +292,7 @@
                     transform: scaleX(-1);
                 }
 
-                ===============
-                | Top bar
-                ===============
+                /*=============== Top bar ===============*/
 
                 .topbar {
                     position: absolute;
@@ -398,9 +392,7 @@
                     box-shadow: 0 0 12px rgba(255,77,103,.7);
                 }
 
-                ===============
-                | Empty state
-                ===============
+                /*=============== Empty state ===============*/
 
                 .empty-state {
                     position: absolute;
@@ -441,9 +433,7 @@
                     font-size: 14px;
                 }
 
-                ===============
-                | Controls
-                ===============
+                /*=============== Controls ===============*/
 
                 .controls {
                     position: absolute;
@@ -498,9 +488,7 @@
                     display: none;
                 }
 
-                ===============
-                | Error
-                ===============
+                /*=============== Error ===============*/
 
                 .error-message {
                     position: absolute;
@@ -524,9 +512,7 @@
                     display: block;
                 }
 
-                ===============
-                | Toast
-                ===============
+                /*=============== Toast ===============*/
 
                 .toast {
                     position: absolute;
@@ -553,9 +539,7 @@
                     transform: translate(-50%, 0);
                 }
 
-                ===============
-                | Incoming call
-                ===============
+                /*=============== Incoming call ===============*/
 
                 .incoming-call {
                     position: fixed;
@@ -628,9 +612,7 @@
                     color: #08080b;
                 }
 
-                ===============
-                | Mobile
-                ===============
+                /*=============== Mobile ===============*/
 
                 @media (max-width: 700px) {
                     .topbar {
@@ -889,26 +871,20 @@
 
         <script>
             const ROOM = <?= json_encode($room) ?>;
-            ===============
-            | Put the generated room ID into the URL
-            ===============
+            /*=============== Put the generated room ID into the URL ===============*/
             if (!new URLSearchParams(window.location.search).get('room')) {
                 const url = new URL(window.location.href);
                 url.searchParams.set('room', ROOM);
                 window.history.replaceState({}, '', url);
             }
 
-            ===============
-            | Client identity
-            ===============
+            /*=============== Client identity ===============*/
             const CLIENT_ID =
                 (crypto.randomUUID)
                     ? crypto.randomUUID()
                     : Math.random().toString(36).slice(2) + Date.now();
 
-            ===============
-            | DOM
-            ===============
+            /*=============== DOM ===============*/
             const remoteVideo = document.getElementById('remoteVideo');
             const localVideo = document.getElementById('localVideo');
             const callButton = document.getElementById('callButton');
@@ -927,9 +903,7 @@
             const acceptButton = document.getElementById('acceptButton');
             const declineButton = document.getElementById('declineButton');
 
-            ===============
-            | WebRTC state
-            ===============
+            /*=============== WebRTC state ===============*/
             let localStream = null;
             let peerConnection = null;
             let pollTimer = null;
@@ -942,9 +916,7 @@
             let incomingCaller = false;
             let currentFacingMode = 'user';
 
-            ===============
-            | ICE servers
-            ===============
+            /*=============== ICE servers ===============*/
             const ICE_SERVERS = {
                 iceServers: [
                     {
@@ -959,9 +931,7 @@
                 ]
             };
 
-            ===============
-            | UI helpers
-            ===============
+            /*=============== UI helpers ===============*/
             function setStatus(text, state = '') {
                 statusText.textContent = text;
                 statusPill.classList.remove(
@@ -993,9 +963,7 @@
                 }, 2200);
             }
 
-            ===============
-            | Camera
-            ===============
+            /*=============== Camera ===============*/
             async function startCamera() {
                 if (localStream) {
                     return localStream;
@@ -1095,9 +1063,7 @@
                 // Optionally, you can change the button text or icon to reflect the mic state
             }
 
-            ===============
-            | WebRTC connection
-            ===============
+            /*=============== WebRTC connection ===============*/
             function createPeerConnection() {
                 if (peerConnection) {
                     peerConnection.close();
@@ -1184,9 +1150,7 @@
                 return peerConnection;
             }
 
-            ===============
-            | ICE helper
-            ===============
+            /*=============== ICE helper ===============*/
             function waitForIce(pc) {
                 return new Promise(resolve => {
                     if (pc.iceGatheringState === 'complete') {
@@ -1213,9 +1177,7 @@
                 });
             }
 
-            ===============
-            | Signaling
-            ===============
+            /*=============== Signaling ===============*/
             async function sendSignal(event, data = null) {
                 const response =
                     await fetch(
@@ -1285,9 +1247,7 @@
                 }
             }
 
-            ===============
-            | Process signaling messages
-            ===============
+            /*=============== Process signaling messages ===============*/
             async function processMessage(message) {
                 switch (message.event) {
                     case 'join':
@@ -1327,9 +1287,7 @@
                 }
             }
 
-            ===============
-            | Start outgoing call
-            ===============
+            /*=============== Start outgoing call ===============*/
             async function createOffer() {
                 if (isCalling || isConnected) {
                     return;
@@ -1365,9 +1323,7 @@
                 }
             }
 
-            ===============
-            | Incoming offer
-            ===============
+            /*=============== Incoming offer ===============*/
             async function handleOffer(offer) {
                 if (!offer) {
                     return;
@@ -1386,9 +1342,7 @@
                 incomingCall.classList.add('show');
             }
 
-            ===============
-            | Accept incoming call
-            ===============
+            /*=============== Accept incoming call ===============*/
             async function acceptCall() {
                 if (!pendingOffer) {
                     return;
@@ -1434,9 +1388,7 @@
                 }
             }
 
-            ===============
-            | Decline incoming call
-            ===============
+            /*=============== Decline incoming call ===============*/
             async function declineCall() {
                 pendingOffer = null;
                 incomingCaller = false;
@@ -1453,9 +1405,7 @@
                 hangupButton.classList.add('hidden');
             }
 
-            ===============
-            | Handle answer
-            ===============
+            /*=============== Handle answer ===============*/
             async function handleAnswer(answer) {
                 if (!answer || !peerConnection) {
                     return;
@@ -1474,9 +1424,7 @@
                 }
             }
 
-            ===============
-            | ICE candidates
-            ===============
+            /*=============== ICE candidates ===============*/
             async function handleCandidate(candidate) {
                 if (!candidate) {
                     return;
@@ -1524,9 +1472,7 @@
                 }
             }
 
-            ===============
-            | Declined call
-            ===============
+            /*=============== Declined call ===============*/
             function handleDecline() {
                 isCalling = false;
                 isConnected = false;
@@ -1546,9 +1492,7 @@
                 hangupButton.classList.add('hidden');
             }
 
-            ===============
-            | Remote peer left
-            ===============
+            /*=============== Remote peer left ===============*/
             function handleLeave() {
                 isCalling = false;
                 isConnected = false;
@@ -1570,9 +1514,7 @@
                 emptyState.style.display = 'grid';
             }
 
-            ===============
-            | Hang up
-            ===============
+            /*=============== Hang up ===============*/
             async function hangUp() {
                 try {
                     await sendSignal('leave');
@@ -1599,9 +1541,7 @@
                 emptyState.style.display = 'grid';
             }
 
-            ===============
-            | Copy call URL
-            ===============
+            /*=============== Copy call URL ===============*/
             async function copyRoomLink() {
                 try {
                     await navigator.clipboard.writeText(
@@ -1617,9 +1557,7 @@
                 }
             }
 
-            ===============
-            | Event listeners
-            ===============
+            /*=============== Event listeners ===============*/
             callButton.addEventListener(
                 'click',
                 createOffer
@@ -1653,9 +1591,7 @@
                 declineCall
             );
 
-            ===============
-            | Start
-            ===============
+            /*=============== Start ===============*/
             async function start() {
                 setStatus('Ready');
                 hint.textContent =
@@ -1676,9 +1612,7 @@
                 }
             }
 
-            ===============
-            | Cleanup
-            ===============
+            /*=============== Cleanup ===============*/
             window.addEventListener(
                 'beforeunload',
                 () => {
