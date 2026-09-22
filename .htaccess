@@ -1,0 +1,13 @@
+RewriteEngine On
+
+# Redirect root / to /home
+RewriteRule ^$ /home [R=301,L]
+
+# Remove .php from URLs
+RewriteCond %{THE_REQUEST} \s/+(.+?)\.php[\s?] [NC]
+RewriteRule ^ /%1 [R=301,L,NE]
+
+# Internally add .php when extension is omitted
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME}.php -f
+RewriteRule ^(.+?)/?$ $1.php [L]
