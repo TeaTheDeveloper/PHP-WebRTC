@@ -14,22 +14,6 @@
         return MESSAGE_DIR . MESSAGE_FILE_PREFIX . $room . '.json';
     }
 
-    if (isset($_GET['action']) && $_GET['action'] === 'debug') {
-        $file = roomFile($room);
-
-        header('Content-Type: application/json');
-
-        echo json_encode([
-            'room' => $room,
-            'file' => basename($file),
-            'exists' => file_exists($file),
-            'size' => file_exists($file) ? filesize($file) : 0,
-            'path' => $file
-        ]);
-
-        exit;
-    }
-
     function cleanMessages(array $messages): array
     {
         $cutoff = time() - MESSAGE_TTL;
