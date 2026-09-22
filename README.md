@@ -8,19 +8,19 @@ The project is intentionally simple: there is no database, no framework, and no 
 
 ## Features
 
-- 🎥 Peer-to-peer video calling with WebRTC
-- 📞 Unique call/room IDs
-- 🔗 Shareable call links
-- ✅ Incoming call prompt
-- ❌ Accept or decline incoming calls
-- 📷 Camera toggle
-- 🔄 Front/rear camera switching on supported devices
-- 📱 Responsive mobile and desktop interface
-- 🌐 STUN support for NAT traversal
-- 🗂️ File-based PHP signaling
-- 🧹 Automatic expiration of old signaling messages
-- 🚫 No database required
-- 🚫 No account required
+- Peer-to-peer video calling with WebRTC
+- Unique call/room IDs
+- Shareable call links
+- Incoming call prompt
+- Accept or decline incoming calls
+- Camera toggle
+- Front/rear camera switching on supported devices
+- Responsive mobile and desktop interface
+- STUN support for NAT traversal
+- File-based PHP signaling
+- Automatic expiration of old signaling messages
+- No database required
+- No account required
 
 ---
 
