@@ -970,8 +970,6 @@
                     localStream = await navigator.mediaDevices.getUserMedia({
                         video: {
                             facingMode: currentFacingMode,
-                            width: { ideal: 1280 },
-                            height: { ideal: 720 },
                             frameRate: { ideal: 30, max: 30 }
                         },
                         audio: true
@@ -1002,8 +1000,6 @@
                         await navigator.mediaDevices.getUserMedia({
                             video: {
                                 facingMode: newFacingMode,
-                                width: { ideal: 1280 },
-                                height: { ideal: 720 },
                                 frameRate: { ideal: 30, max: 30 }
                             },
                             audio: true
