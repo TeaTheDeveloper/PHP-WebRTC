@@ -878,9 +878,17 @@
 
             /*=============== Client identity ===============*/
             const CLIENT_ID =
-                (crypto.randomUUID)
-                    ? crypto.randomUUID()
-                    : Math.random().toString(36).slice(2) + Date.now();
+                sessionStorage.getItem('peercall_client_id') ||
+                (
+                    crypto.randomUUID
+                        ? crypto.randomUUID()
+                        : Math.random().toString(36).slice(2) + Date.now()
+                );
+
+            sessionStorage.setItem(
+                'peercall_client_id',
+                CLIENT_ID
+            );
 
             /*=============== DOM ===============*/
             const remoteVideo = document.getElementById('remoteVideo');
@@ -1508,23 +1516,31 @@
             /*=============== Remote peer left ===============*/
             function handleLeave() {
                 stopCallSounds();
+
                 isCalling = false;
                 isConnected = false;
                 pendingOffer = null;
                 incomingCaller = false;
+
                 incomingCall.classList.remove('show');
+
                 if (peerConnection) {
                     peerConnection.close();
                     peerConnection = null;
                 }
+
                 remoteDescriptionReady = false;
                 pendingCandidates = [];
+
                 remoteVideo.srcObject = null;
+
                 setStatus('Disconnected');
                 hint.textContent =
                     'The other person left the call';
+
                 callButton.classList.remove('hidden');
                 hangupButton.classList.add('hidden');
+
                 emptyState.style.display = 'grid';
             }
 
