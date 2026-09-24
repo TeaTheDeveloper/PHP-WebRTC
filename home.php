@@ -276,6 +276,7 @@
                 /*=============== Local video ===============*/
 
                 .local-video {
+                    touch-action: none;
                     position: absolute;
                     z-index: 20;
                     top: 82px;
@@ -1657,6 +1658,97 @@
                 stopCallingSound();
                 stopRingingSound();
             }
+
+            /*=============== Toggle camera ===============*/
+            localVideo.addEventListener('click', () => {
+                const localSrc = localVideo.srcObject;
+                const remoteSrc = remoteVideo.srcObject;
+
+                if (!localSrc || !remoteSrc) {
+                    return;
+                }
+
+                localVideo.srcObject = remoteSrc;
+                remoteVideo.srcObject = localSrc;
+            });
+
+            /*=============== Draggable local video ===============*/
+            let isDraggingVideo = false;
+            let dragOffsetX = 0;
+            let dragOffsetY = 0;
+
+            localVideo.addEventListener(
+                'touchstart',
+                event => {
+                    if (!localVideo.srcObject) {
+                        return;
+                    }
+
+                    const touch = event.touches[0];
+                    const rect = localVideo.getBoundingClientRect();
+
+                    dragOffsetX = touch.clientX - rect.left;
+                    dragOffsetY = touch.clientY - rect.top;
+                    isDraggingVideo = false;
+                },
+                { passive: true }
+            );
+
+            localVideo.addEventListener(
+                'touchmove',
+                event => {
+                    const touch = event.touches[0];
+
+                    isDraggingVideo = true;
+
+                    const maxX =
+                        window.innerWidth - localVideo.offsetWidth;
+
+                    const maxY =
+                        window.innerHeight - localVideo.offsetHeight;
+
+                    const x = Math.max(
+                        0,
+                        Math.min(
+                            touch.clientX - dragOffsetX,
+                            maxX
+                        )
+                    );
+
+                    const y = Math.max(
+                        0,
+                        Math.min(
+                            touch.clientY - dragOffsetY,
+                            maxY
+                        )
+                    );
+
+                    localVideo.style.left = x + 'px';
+                    localVideo.style.top = y + 'px';
+                    localVideo.style.right = 'auto';
+                    localVideo.style.bottom = 'auto';
+
+                    event.preventDefault();
+                },
+                { passive: false }
+            );
+
+            localVideo.addEventListener(
+                'touchend',
+                () => {
+                    if (!isDraggingVideo) {
+                        const localSrc = localVideo.srcObject;
+                        const remoteSrc = remoteVideo.srcObject;
+
+                        if (localSrc && remoteSrc) {
+                            localVideo.srcObject = remoteSrc;
+                            remoteVideo.srcObject = localSrc;
+                        }
+                    }
+
+                    isDraggingVideo = false;
+                }
+            );
 
             /*=============== Cleanup ===============*/
             window.addEventListener(
