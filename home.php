@@ -1284,19 +1284,27 @@
 
             /*=============== Start outgoing call ===============*/
             async function createOffer() {
-                if (isCalling || isConnected) {
+                if (isCalling) {
+                    await hangUp();
                     return;
                 }
+
+                if (isConnected) {
+                    return;
+                }
+
                 try {
                     hideError();
                     isCalling = true;
                     playCallingSound();
+
                     setStatus(
                         'Calling...',
                         'calling'
                     );
                     hint.textContent =
                         'Calling the other person...';
+
                     await startCamera();
                     const pc =
                         createPeerConnection();
@@ -1312,6 +1320,8 @@
                     );
                 } catch (error) {
                     isCalling = false;
+                    stopCallingSound();
+
                     showError(
                         'Could not start the call: ' +
                         error.message
