@@ -281,7 +281,6 @@
                     top: 82px;
                     right: 24px;
                     width: min(260px, 27vw);
-                    aspect-ratio: 16 / 9;
                     object-fit: cover;
                     background: #111116;
                     border: 1px solid rgba(255,255,255,.14);
@@ -1105,6 +1104,7 @@
                     const state =
                         peerConnection.connectionState;
                     if (state === 'connected') {
+                        stopCallSounds();
                         isConnected = true;
                         isCalling = false;
                         setStatus(
@@ -1123,6 +1123,7 @@
                     ) {
                         isConnected = false;
                         if (state !== 'closed') {
+                            stopCallSounds();
                             setStatus('Disconnected');
                             hint.textContent =
                                 'The connection was lost';
@@ -1289,6 +1290,7 @@
                 try {
                     hideError();
                     isCalling = true;
+                    playCallingSound();
                     setStatus(
                         'Calling...',
                         'calling'
@@ -1333,6 +1335,7 @@
                 );
                 hint.textContent =
                     'Someone is calling you';
+                playRingingSound();
                 incomingCall.classList.add('show');
             }
 
@@ -1342,6 +1345,7 @@
                     return;
                 }
                 incomingCall.classList.remove('show');
+                stopRingingSound();
                 try {
                     hideError();
                     setStatus(
@@ -1387,6 +1391,8 @@
                 pendingOffer = null;
                 incomingCaller = false;
                 incomingCall.classList.remove('show');
+                stopRingingSound();
+                stopCallingSound();
                 try {
                     await sendSignal('decline');
                 } catch (_) {
@@ -1468,6 +1474,7 @@
 
             /*=============== Declined call ===============*/
             function handleDecline() {
+                stopCallingSound();
                 isCalling = false;
                 isConnected = false;
                 pendingOffer = null;
@@ -1479,6 +1486,7 @@
                 }
                 remoteDescriptionReady = false;
                 pendingCandidates = [];
+                stopCallSounds();
                 setStatus('Call declined');
                 hint.textContent =
                     'The other person declined the call';
@@ -1488,6 +1496,7 @@
 
             /*=============== Remote peer left ===============*/
             function handleLeave() {
+                stopCallSounds();
                 isCalling = false;
                 isConnected = false;
                 pendingOffer = null;
@@ -1527,6 +1536,7 @@
                 incomingCall.classList.remove('show');
                 remoteDescriptionReady = false;
                 pendingCandidates = [];
+                stopCallSounds();
                 setStatus('Ready');
                 hint.textContent =
                     'Share the call link with someone, then start a video call.';
@@ -1593,7 +1603,7 @@
                 pollTimer =
                     setInterval(
                         poll,
-                        1000
+                        10000
                     );
                 await poll();
                 try {
@@ -1604,6 +1614,38 @@
                         error.message
                     );
                 }
+            }
+
+            /*=============== Call sounds ===============*/
+            const callingSound = new Audio('assets/sounds/calling.mp3');
+            const ringingSound = new Audio('assets/sounds/ringing.mp3');
+
+            callingSound.loop = true;
+            ringingSound.loop = true;
+
+            function playCallingSound() {
+                callingSound.currentTime = 0;
+                callingSound.play().catch(() => {});
+            }
+
+            function stopCallingSound() {
+                callingSound.pause();
+                callingSound.currentTime = 0;
+            }
+
+            function playRingingSound() {
+                ringingSound.currentTime = 0;
+                ringingSound.play().catch(() => {});
+            }
+
+            function stopRingingSound() {
+                ringingSound.pause();
+                ringingSound.currentTime = 0;
+            }
+
+            function stopCallSounds() {
+                stopCallingSound();
+                stopRingingSound();
             }
 
             /*=============== Cleanup ===============*/
