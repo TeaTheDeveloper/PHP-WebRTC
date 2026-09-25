@@ -93,6 +93,11 @@ PHP-WebRTC/
 │
 ├── home.php
 │
+├── assets/
+│   └── sounds/
+│       ├── calling.mp3
+│       └── ringing.mp3
+│
 ├── data/
 │   ├── .gitkeep
 │   └── .htaccess
