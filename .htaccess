@@ -1,7 +1,7 @@
 RewriteEngine On
 
-# Redirect root / to /home
-RewriteRule ^$ /home [R=301,L]
+# Redirect root / to /peer-call
+RewriteRule ^$ /peer-call [R=301,L]
 
 # Remove .php from URLs
 RewriteCond %{THE_REQUEST} \s/+(.+?)\.php[\s?] [NC]
