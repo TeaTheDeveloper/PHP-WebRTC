@@ -11,8 +11,8 @@ The project is intentionally simple: there is no database, no framework, and no 
 - Peer-to-peer video calling with WebRTC
 - Unique call/room IDs
 - Shareable call links
-- Incoming call prompt
-- Accept or decline incoming calls
+- Host-based call flow
+- Automatic participant connection
 - Camera toggle
 - Front/rear camera switching on supported devices
 - Responsive mobile and desktop interface
@@ -31,31 +31,31 @@ PHP-WebRTC uses **WebRTC** for the actual video connection. PHP is only used for
 The general flow is:
 
 ```text
-User A
+Host
    │
-   │ Opens unique call URL
+   │ Creates and shares unique call URL
    ▼
-home.php
+peer-call.php
    │
    │ join
    ▼
 PHP signaling queue
    │
    ▼
-User B
+Participant
    │
-   │ Receives join
+   │ Joins shared call URL
    ▼
-Creates WebRTC Offer
+Host creates WebRTC Offer
    │
    │ offer
    ▼
 PHP signaling queue
    │
    ▼
-User B
+Participant
    │
-   │ Accept
+   │ Automatically answers
    ▼
 Creates WebRTC Answer
    │
@@ -64,7 +64,7 @@ Creates WebRTC Answer
 PHP signaling queue
    │
    ▼
-User A
+Host
    │
    ▼
 WebRTC connection established
@@ -91,7 +91,7 @@ A minimal installation looks like this:
 ```text
 PHP-WebRTC/
 │
-├── home.php
+├── peer-call.php
 │
 ├── assets/
 │   └── sounds/
@@ -107,7 +107,7 @@ PHP-WebRTC/
 └── README.md
 ```
 
-### `home.php`
+### `peer-call.php`
 The main application file containing:
 - PHP signaling API
 - HTML interface
@@ -137,7 +137,7 @@ These files contain signaling events (not video recordings) and should not be co
 
 ## Configuration Constants
 
-The PHP application defines several constants near the top of `home.php`:
+The PHP application defines several constants near the top of `peer-call.php`:
 
 ```php
 const MESSAGE_FILE_PREFIX = '.webrtc_room_';
@@ -150,7 +150,7 @@ const MESSAGE_TTL = 300;
 Defines the prefix used when PHP creates a signaling file. For room `call_a83f21d94c7e12ab`, the file becomes `.webrtc_room_call_a83f21d94c7e12ab.json`. The leading dot hides the file on Unix-like systems and distinguishes PHP-WebRTC's files from other data.
 
 ### `MESSAGE_DIR`
-Specifies where signaling files are stored (`/home.php-directory/data/`). PHP-WebRTC creates this directory automatically if it does not exist.
+Specifies where signaling files are stored (`/project-directory/data/`). PHP-WebRTC creates this directory automatically if it does not exist.
 
 ### `ROOM_PATTERN`
 Regex controlling valid room IDs. A room ID can contain `a-z`, `A-Z`, `0-9`, `_`, and `-`, between 3 and 64 characters long.
@@ -167,10 +167,10 @@ Controls signaling message retention in seconds (`300` = 5 minutes). Messages ol
 ## Room IDs & Client IDs
 
 ### Room IDs
-PHP-WebRTC automatically generates a unique room ID when `home.php` is opened without a room parameter.
+PHP-WebRTC automatically generates a unique room ID when `peer-call.php` is opened without a room parameter.
 
 ```text
-home.php  ──►  home.php?room=call_a83f21d94c7e12ab
+peer-call.php  ──►  peer-call.php?room=call_a83f21d94c7e12ab
 ```
 
 Generated via `'call_' . bin2hex(random_bytes(8))`, the ID is inserted into the address bar using `window.history.replaceState(...)` so users can directly copy and share the URL.
@@ -204,8 +204,8 @@ Used by browsers to retrieve pending signaling messages belonging to other clien
 
 ### Supported Signaling Events
 - **`join`**: Sent when a user enters a call room to notify other participants.
-- **`offer`**: Contains the WebRTC session offer created by the caller (triggers the "Incoming call" prompt on the recipient's device).
-- **`answer`**: Contains the WebRTC answer generated after accepting a call.
+- **`offer`**: Contains the WebRTC session offer created by the host.
+- **`answer`**: Contains the WebRTC answer generated automatically by a participant.
 - **`candidate`**: Contains ICE candidates to help determine direct network communication routes.
 - **`leave`**: Sent when a participant hangs up or leaves, prompting the peer connection to close.
 - **`decline`**: Sent when a recipient declines an incoming call, returning the caller to the ready state.
@@ -270,7 +270,7 @@ Run the built-in PHP development server:
 ```bash
 php -S localhost:8000
 ```
-Navigate to `http://localhost:8000/home.php`. 
+Navigate to `http://localhost:8000/peer-call.php`. 
 
 *Note: Modern browsers require an **HTTPS** context for media device (camera) access in non-localhost environments.*
 
@@ -306,8 +306,8 @@ Example JSON payload stored in `data/`:
 | Area | Current Limitation | Potential Improvement |
 | :--- | :--- | :--- |
 | **Signaling** | File polling | WebSockets, Redis, Database, server-side cleanup jobs |
-| **WebRTC** | Video-only, STUN-only | TURN integration, screen sharing, reconnection handling |
-| **UX** | Basic call interface | Call duration, mute/unmute toggles, fullscreen controls, accessibility |
+| **WebRTC** | Full-mesh peer connections, STUN-only | TURN integration, screen sharing, reconnection handling |
+| **UX** | Basic call interface | Call duration, fullscreen controls, accessibility |
 | **Security** | Possession-based room access | Password protection, link expiration, rate limiting, CSRF protection |
 
 ---
@@ -327,9 +327,9 @@ Contributions are welcome! Please follow these guidelines:
    git checkout -b feature/your-feature
    ```
 2. Test end-to-end call paths:
-   - **Accept flow:** `Join` ➔ `Call` ➔ `Incoming prompt` ➔ `Accept` ➔ `Video established`
-   - **Decline flow:** `Join` ➔ `Call` ➔ `Decline` ➔ `Caller notified`
-   - **Lifecycle:** `Refresh / Leave room`
+   - **Host flow:** `Create room` ➔ `Host starts call` ➔ `Share link` ➔ `Participants join automatically` ➔ `Video established`
+   - **Participant flow:** `Open shared link` ➔ `Join automatically` ➔ `Connect to host` ➔ `Video established`
+   - **Lifecycle:** `Join / Leave / Host ends room`
 3. Commit and push:
    ```bash
    git add .
@@ -360,9 +360,9 @@ Thumbs.db
 
 ```text
 ┌──────────────────────┐
-│      Browser A       │
+│        Host         │
 │                      │
-│  WebRTC Peer A       │
+│    WebRTC Peer       │
 └──────────┬───────────┘
            │
            │ signaling
@@ -370,7 +370,7 @@ Thumbs.db
 ┌──────────────────────┐
 │      PHP Server      │
 │                      │
-│  home.php            │
+│  peer-call.php            │
 │  └── signaling API   │
 │                      │
 │  data/*.json         │
@@ -379,14 +379,14 @@ Thumbs.db
            │ signaling
            ▼
 ┌──────────────────────┐
-│      Browser B       │
+│     Participant     │
 │                      │
-│  WebRTC Peer B       │
+│    WebRTC Peer       │
 └──────────────────────┘
 
 After WebRTC connection established:
 
-Browser A ◄══════════════════► Browser B
+Host ◄══════════════════► Participant
              P2P media
 ```
 
