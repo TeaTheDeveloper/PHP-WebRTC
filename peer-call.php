@@ -932,8 +932,12 @@
 
         <script>
             const ROOM = <?= json_encode($room) ?>;
+            const ROOM_PARAM = new URLSearchParams(
+                window.location.search
+            ).get('room');
+
             /*=============== Put the generated room ID into the URL ===============*/
-            if (!new URLSearchParams(window.location.search).get('room')) {
+            if (!ROOM_PARAM) {
                 const url = new URL(window.location.href);
                 url.searchParams.set('room', ROOM);
                 window.history.replaceState({}, '', url);
@@ -954,9 +958,6 @@
             );
 
             const SESSION_STARTED_AT = Date.now();
-            const ROOM_PARAM = new URLSearchParams(
-                window.location.search
-            ).get('room');
             const HOST_STORAGE_KEY =
                 'peercall_host_' + ROOM;
             const isHost =
