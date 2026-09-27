@@ -250,6 +250,8 @@
                 content="width=device-width, initial-scale=1.0, viewport-fit=cover"
             >
 
+            <link href='https://fonts.googleapis.com/css?family=Quicksand' rel='stylesheet'>
+
             <!-- Future product name -->
             <title>PeerCall</title>
             <!-- Future product name -->
@@ -281,6 +283,7 @@
                     background: var(--bg);
                     color: var(--text);
                     font-family:
+                        Quicksand,
                         Inter,
                         ui-sans-serif,
                         system-ui,
