@@ -1888,7 +1888,9 @@
                 hangupButton.classList.add('hidden');
                 emptyState.style.display = 'grid';
                 updateCallState();
-                window.location = 'end';
+                setTimeout(() => {
+                    window.location = 'end';
+                }, 3000);
             }
 
             /*=============== Copy call URL ===============*/
