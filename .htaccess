@@ -12,11 +12,11 @@ RewriteCond %{REQUEST_FILENAME} !-d
 RewriteCond %{REQUEST_FILENAME}.php -f
 RewriteRule ^(.+?)/?$ $1.php [L]
 
-ErrorDocument 400 /error.php?code=400
-ErrorDocument 401 /error.php?code=401
-ErrorDocument 403 /error.php?code=403
-ErrorDocument 404 /error.php?code=404
-ErrorDocument 500 /error.php?code=500
-ErrorDocument 502 /error.php?code=502
-ErrorDocument 503 /error.php?code=503
-ErrorDocument 504 /error.php?code=504
+ErrorDocument 400 /error?code=400
+ErrorDocument 401 /error?code=401
+ErrorDocument 403 /error?code=403
+ErrorDocument 404 /error?code=404
+ErrorDocument 500 /error?code=500
+ErrorDocument 502 /error?code=502
+ErrorDocument 503 /error?code=503
+ErrorDocument 504 /error?code=504
