@@ -122,7 +122,7 @@ $message = $messages[$code] ?? 'Something went wrong. Please try again.';
         <div class="code">ERROR <?= htmlspecialchars((string) $code, ENT_QUOTES, 'UTF-8') ?></div>
         <h1>Something went wrong</h1>
         <p><?= htmlspecialchars($message, ENT_QUOTES, 'UTF-8') ?></p>
-        <a href="peer-call">Back to PeerCall</a>
+        <a href="call">Back to PeerCall</a>
     </main>
 </body>
 </html>

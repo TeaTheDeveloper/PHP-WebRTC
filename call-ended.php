@@ -208,7 +208,7 @@ if ($rating > 0) {
         </section>
 
         <div class="actions">
-            <a class="button primary" href="peer-call">
+            <a class="button primary" href="call">
                 Start another call
             </a>
 

@@ -35,7 +35,7 @@ Host
    │
    │ Creates and shares unique call URL
    ▼
-peer-call.php
+call.php
    │
    │ join
    ▼
@@ -91,7 +91,7 @@ A minimal installation looks like this:
 ```text
 PHP-WebRTC/
 │
-├── peer-call.php
+├── call.php
 │
 ├── assets/
 │   └── sounds/
@@ -107,7 +107,7 @@ PHP-WebRTC/
 └── README.md
 ```
 
-### `peer-call.php`
+### `call.php`
 The main application file containing:
 - PHP signaling API
 - HTML interface
@@ -137,7 +137,7 @@ These files contain signaling events (not video recordings) and should not be co
 
 ## Configuration Constants
 
-The PHP application defines several constants near the top of `peer-call.php`:
+The PHP application defines several constants near the top of `call.php`:
 
 ```php
 const MESSAGE_FILE_PREFIX = '.webrtc_room_';
@@ -167,10 +167,10 @@ Controls signaling message retention in seconds (`300` = 5 minutes). Messages ol
 ## Room IDs & Client IDs
 
 ### Room IDs
-PHP-WebRTC automatically generates a unique room ID when `peer-call.php` is opened without a room parameter.
+PHP-WebRTC automatically generates a unique room ID when `call.php` is opened without a room parameter.
 
 ```text
-peer-call.php  ──►  peer-call.php?room=call_a83f21d94c7e12ab
+call.php  ──►  call.php?room=call_a83f21d94c7e12ab
 ```
 
 Generated via `'call_' . bin2hex(random_bytes(8))`, the ID is inserted into the address bar using `window.history.replaceState(...)` so users can directly copy and share the URL.
@@ -270,7 +270,7 @@ Run the built-in PHP development server:
 ```bash
 php -S localhost:8000
 ```
-Navigate to `http://localhost:8000/peer-call.php`. 
+Navigate to `http://localhost:8000/call.php`. 
 
 *Note: Modern browsers require an **HTTPS** context for media device (camera) access in non-localhost environments.*
 
@@ -370,7 +370,7 @@ Thumbs.db
 ┌──────────────────────┐
 │      PHP Server      │
 │                      │
-│  peer-call.php            │
+│  call.php            │
 │  └── signaling API   │
 │                      │
 │  data/*.json         │
