@@ -21,6 +21,7 @@ $message = $messages[$code] ?? 'Something went wrong. Please try again.';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href='https://fonts.googleapis.com/css?family=Quicksand' rel='stylesheet'>
     <title>PeerCall — <?= htmlspecialchars((string) $code, ENT_QUOTES, 'UTF-8') ?></title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -38,7 +39,7 @@ $message = $messages[$code] ?? 'Something went wrong. Please try again.';
             height: 100%;
             background: var(--bg);
             color: var(--text);
-            font-family: Inter, ui-sans-serif, system-ui, -apple-system,
+            font-family: Quicksand, Inter, ui-sans-serif, system-ui, -apple-system,
                 BlinkMacSystemFont, "Segoe UI", sans-serif;
         }
 

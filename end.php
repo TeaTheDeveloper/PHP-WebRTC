@@ -46,6 +46,7 @@ if ($rating > 0) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#0b0d12">
+    <link href='https://fonts.googleapis.com/css?family=Quicksand' rel='stylesheet'>
     <title>Call Ended | PeerCall</title>
     <style>
         * {
@@ -66,7 +67,7 @@ if ($rating > 0) {
                 radial-gradient(circle at top, rgba(80, 100, 255, .14), transparent 35%),
                 #0b0d12;
             font-family:
-                Inter, -apple-system, BlinkMacSystemFont,
+                Quicksand, Inter, -apple-system, BlinkMacSystemFont,
                 "Segoe UI", sans-serif;
         }
         .card {
