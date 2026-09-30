@@ -1997,7 +1997,7 @@
                 pollTimer =
                     setInterval(
                         poll,
-                        10000
+                        3000
                     );
 
                 await poll();
