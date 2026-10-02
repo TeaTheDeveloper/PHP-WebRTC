@@ -232,7 +232,7 @@
     }
 
 
-    /*=============== Generate a unique room/call ID for a new call ===============*/
+    /* Generate a unique room/call ID for a new call */
 
     $room = isset($_GET['room']) &&
             is_string($_GET['room']) &&
@@ -316,7 +316,7 @@
                         #08080b;
                 }
 
-                /*=============== Remote video ===============*/
+                /* Remote video */
 
                 .remote-videos {
                     position: absolute;
@@ -341,7 +341,7 @@
                     background: #050507;
                 }
 
-                /*=============== Local video ===============*/
+                /* Local video */
 
                 .local-video {
                     touch-action: none;
@@ -358,7 +358,7 @@
                     transform: scaleX(-1);
                 }
 
-                /*=============== Top bar ===============*/
+                /* Top bar */
 
                 .topbar {
                     position: absolute;
@@ -458,7 +458,7 @@
                     box-shadow: 0 0 12px rgba(255,77,103,.7);
                 }
 
-                /*=============== Empty state ===============*/
+                /* Empty state */
 
                 .empty-state {
                     position: absolute;
@@ -499,7 +499,7 @@
                     font-size: 14px;
                 }
 
-                /*=============== Controls ===============*/
+                /* Controls */
 
                 .controls {
                     position: absolute;
@@ -554,7 +554,7 @@
                     display: none;
                 }
 
-                /*=============== Error ===============*/
+                /* Error */
 
                 .error-message {
                     position: absolute;
@@ -578,7 +578,7 @@
                     display: block;
                 }
 
-                /*=============== Toast ===============*/
+                /* Toast */
 
                 .toast {
                     position: absolute;
@@ -605,7 +605,7 @@
                     transform: translate(-50%, 0);
                 }
 
-                /*=============== Incoming call ===============*/
+                /* Incoming call */
 
                 .incoming-call {
                     position: fixed;
@@ -678,7 +678,7 @@
                     color: #08080b;
                 }
 
-                /*=============== Mobile ===============*/
+                /* Mobile */
 
                 @media (max-width: 700px) {
                     .topbar {
@@ -935,51 +935,49 @@
 
         <script>
             const ROOM = <?= json_encode($room) ?>;
-            const ROOM_PARAM = new URLSearchParams(
-                window.location.search
-            ).get('room');
+            const params = new URLSearchParams(window.location.search);
+            const ROOM_PARAM = params.get('room');
+            const HOST_PARAM = params.get('host');
+            const HOST_STORAGE_KEY = 'peercall_host_' + ROOM;
 
-            /*=============== Put the generated room ID into the URL ===============*/
+            const isHost =
+                HOST_PARAM === '1' ||
+                !ROOM_PARAM ||
+                localStorage.getItem(HOST_STORAGE_KEY) === '1';
+
+            if (HOST_PARAM === '1' || !ROOM_PARAM) {
+                localStorage.setItem(HOST_STORAGE_KEY, '1');
+            }
+
+            // Clean host=1 from the URL (shared links stay participant-safe)
+            if (HOST_PARAM === '1') {
+                const url = new URL(window.location.href);
+                url.searchParams.delete('host');
+                window.history.replaceState({}, '', url);
+            }
+
+            // Put room in the URL if missing
             if (!ROOM_PARAM) {
                 const url = new URL(window.location.href);
                 url.searchParams.set('room', ROOM);
                 window.history.replaceState({}, '', url);
             }
 
-            /*=============== Client identity ===============*/
             const CLIENT_ID =
                 sessionStorage.getItem('peercall_client_id') ||
-                (
-                    crypto.randomUUID
-                        ? crypto.randomUUID()
-                        : Math.random().toString(36).slice(2) + Date.now()
-                );
+                (crypto.randomUUID
+                    ? crypto.randomUUID()
+                    : Math.random().toString(36).slice(2) + Date.now());
 
-            sessionStorage.setItem(
-                'peercall_client_id',
-                CLIENT_ID
-            );
+            sessionStorage.setItem('peercall_client_id', CLIENT_ID);
 
             const SESSION_STARTED_AT = Date.now();
-            const HOST_STORAGE_KEY =
-                'peercall_host_' + ROOM;
-            const isHost =
-                !ROOM_PARAM ||
-                localStorage.getItem(HOST_STORAGE_KEY) === '1';
-
-            if (!ROOM_PARAM) {
-                localStorage.setItem(
-                    HOST_STORAGE_KEY,
-                    '1'
-                );
-            }
 
             let hostClientId = isHost ? CLIENT_ID : null;
             let roomEnded = false;
 
-            /*=============== DOM ===============*/
-            const remoteVideosContainer =
-                document.getElementById('remoteVideos');
+            /* DOM */
+            const remoteVideosContainer = document.getElementById('remoteVideos');
             const localVideo = document.getElementById('localVideo');
             const callButton = document.getElementById('callButton');
             const hangupButton = document.getElementById('hangupButton');
@@ -997,7 +995,7 @@
             const acceptButton = document.getElementById('acceptButton');
             const declineButton = document.getElementById('declineButton');
 
-            /*=============== WebRTC state ===============*/
+            /* WebRTC state */
             let localStream = null;
             const peerConnections = new Map();
             const remoteVideos = new Map();
@@ -1008,7 +1006,7 @@
             let incomingCaller = false;
             let currentFacingMode = 'user';
 
-            /*=============== ICE servers ===============*/
+            /* ICE servers */
             const ICE_SERVERS = {
                 iceServers: [
                     {
@@ -1023,7 +1021,7 @@
                 ]
             };
 
-            /*=============== UI helpers ===============*/
+            /* UI helpers */
             function setStatus(text, state = '') {
                 statusText.textContent = text;
                 statusPill.classList.remove(
@@ -1055,7 +1053,7 @@
                 }, 2200);
             }
 
-            /*=============== Camera ===============*/
+            /* Camera */
             async function startCamera() {
                 if (localStream) {
                     return localStream;
@@ -1153,7 +1151,7 @@
                 // Optionally, you can change the button text or icon to reflect the mic state
             }
 
-            /*=============== WebRTC connection ===============*/
+            /* WebRTC connection */
             function createRemoteVideo(peerId) {
                 if (remoteVideos.has(peerId)) {
                     return remoteVideos.get(peerId);
@@ -1332,7 +1330,7 @@
                 return pc;
             }
 
-            /*=============== ICE helper ===============*/
+            /* ICE helper */
             function waitForIce(pc) {
                 return new Promise(resolve => {
                     if (pc.iceGatheringState === 'complete') {
@@ -1363,7 +1361,7 @@
                 });
             }
 
-            /*=============== Signaling ===============*/
+            /* Signaling */
             async function sendSignal(
                 event,
                 data = null,
@@ -1455,7 +1453,7 @@
                 }
             }
 
-            /*=============== Process signaling messages ===============*/
+            /* Process signaling messages */
             async function processMessage(message) {
                 switch (message.event) {
                     case 'join':
@@ -1516,7 +1514,7 @@
                 }
             }
 
-            /*=============== Start outgoing call ===============*/
+            /* Start outgoing call */
             async function createOffer(peerId) {
                 if (!peerId || peerId === CLIENT_ID) {
                     return;
@@ -1585,7 +1583,7 @@
                 }
             }
 
-            /*=============== Incoming offer ===============*/
+            /* Incoming offer */
             async function handleOffer(
                 peerId,
                 offer
@@ -1642,7 +1640,7 @@
                 }
             }
 
-            /*=============== Accept incoming call ===============*/
+            /* Accept incoming call */
             async function acceptCall() {
                 incomingCall.classList.remove('show');
                 stopRingingSound();
@@ -1661,7 +1659,7 @@
                 }
             }
 
-            /*=============== Decline incoming call ===============*/
+            /* Decline incoming call */
             async function declineCall() {
                 const peerId =
                     pendingOffer &&
@@ -1689,7 +1687,7 @@
                 updateCallState();
             }
 
-            /*=============== Handle answer ===============*/
+            /* Handle answer */
             async function handleAnswer(
                 peerId,
                 answer
@@ -1723,7 +1721,7 @@
                 }
             }
 
-            /*=============== ICE candidates ===============*/
+            /* ICE candidates */
             async function handleCandidate(
                 peerId,
                 candidate
@@ -1790,7 +1788,7 @@
                 }
             }
 
-            /*=============== Declined call ===============*/
+            /* Declined call */
             function handleDecline(peerId) {
                 if (peerId) {
                     closePeerConnection(peerId);
@@ -1804,7 +1802,7 @@
                 updateCallState();
             }
 
-            /*=============== Remote peer left ===============*/
+            /* Remote peer left */
             function handleLeave(peerId, data = null) {
                 const hostEnded =
                     data &&
@@ -1842,7 +1840,7 @@
                 updateCallState();
             }
 
-            /*=============== Hang up ===============*/
+            /* Hang up */
             async function hangUp() {
                 const hostEnded = isHost;
 
@@ -1893,7 +1891,7 @@
                 }, 3000);
             }
 
-            /*=============== Copy call URL ===============*/
+            /* Copy call URL */
             async function copyRoomLink() {
                 try {
                     await navigator.clipboard.writeText(
@@ -1909,7 +1907,7 @@
                 }
             }
 
-            /*=============== Event listeners ===============*/
+            /* Event listeners */
             callButton.addEventListener(
                 'click',
                 async () => {
@@ -1981,7 +1979,7 @@
                 declineCall
             );
 
-            /*=============== Start ===============*/
+            /* Start */
             async function start() {
                 setStatus('Ready');
 
@@ -2041,7 +2039,7 @@
                 }
             }
 
-            /*=============== Call sounds ===============*/
+            /* Call sounds */
             const callingSound = new Audio('assets/sounds/calling.mp3');
             const ringingSound = new Audio('assets/sounds/ringing.mp3');
 
@@ -2073,7 +2071,7 @@
                 stopRingingSound();
             }
 
-            /*=============== Toggle camera ===============*/
+            /* Toggle camera */
             localVideo.addEventListener('click', () => {
                 const localSrc = localVideo.srcObject;
                 const firstRemoteVideo =
@@ -2096,7 +2094,7 @@
                 firstRemoteVideo.srcObject = localSrc;
             });
 
-            /*=============== Draggable local video ===============*/
+            /* Draggable local video */
             let isDraggingVideo = false;
             let dragOffsetX = 0;
             let dragOffsetY = 0;
@@ -2184,7 +2182,7 @@
                 }
             );
 
-            /*=============== Cleanup ===============*/
+            /* Cleanup */
             window.addEventListener(
                 'beforeunload',
                 () => {
