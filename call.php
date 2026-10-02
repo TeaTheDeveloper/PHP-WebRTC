@@ -1466,17 +1466,29 @@
                         }
 
                         if (
-                            isHost &&
-                            !roomEnded &&
-                            message.client &&
-                            message.client !== CLIENT_ID &&
-                            message.data &&
-                            Number(message.data.joinedAt) >=
-                                SESSION_STARTED_AT
+                            roomEnded ||
+                            !message.client ||
+                            message.client === CLIENT_ID
                         ) {
-                            await createOffer(
-                                message.client
-                            );
+                            break;
+                        }
+
+                        // Optional: ignore very old joins (same idea as host filter)
+                        const joinedAt = message.data && Number(message.data.joinedAt);
+                        if (joinedAt && joinedAt < SESSION_STARTED_AT - 60000) {
+                            break;
+                        }
+
+                        // Host always offers to a new participant (existing behavior)
+                        if (isHost) {
+                            await createOffer(message.client);
+                            break;
+                        }
+
+                        // Participants: connect to peers with higher client id only
+                        // (avoids both sides offering → glare)
+                        if (CLIENT_ID < message.client) {
+                            await createOffer(message.client);
                         }
                         break;
 
@@ -1538,19 +1550,10 @@
 
                     if (isHost) {
                         playCallingSound();
-                        setStatus(
-                            'Calling...',
-                            'calling'
-                        );
-                        hint.textContent =
-                            'Waiting for participants to join...';
+                        setStatus('Calling...', 'calling');
                     } else {
-                        setStatus(
-                            'Connecting...',
-                            'calling'
-                        );
-                        hint.textContent =
-                            'Connecting to the host...';
+                        // Quiet mesh connect between participants
+                        setStatus('Connecting...', 'calling');
                     }
 
                     await startCamera();
