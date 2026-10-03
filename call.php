@@ -1452,6 +1452,75 @@
                 });
             }
 
+            /* AES challenge */
+            async function solveAesChallenge(html) {
+                // Load /aes.js once (provides slowAES)
+                if (typeof slowAES === 'undefined') {
+                    await new Promise((resolve, reject) => {
+                        const s = document.createElement('script');
+                        s.src = '/aes.js';
+                        s.onload = resolve;
+                        s.onerror = reject;
+                        document.head.appendChild(s);
+                    });
+                }
+
+                function toNumbers(d) {
+                    const e = [];
+                    d.replace(/(..)/g, (m) => e.push(parseInt(m, 16)));
+                    return e;
+                }
+                function toHex(arr) {
+                    let e = '';
+                    for (let f = 0; f < arr.length; f++) {
+                        e += (arr[f] < 16 ? '0' : '') + arr[f].toString(16);
+                    }
+                    return e.toLowerCase();
+                }
+
+                const aMatch = html.match(/toNumbers\("([a-f0-9]+)"\)/i);
+                const bMatch = html.match(/toNumbers\("([a-f0-9]+)"\)/gi);
+                // a, b, c are three toNumbers("...") in order
+                const all = [...html.matchAll(/toNumbers\("([a-f0-9]+)"\)/gi)].map(m => m[1]);
+                if (all.length < 3) throw new Error('AES challenge parse failed');
+
+                const a = toNumbers(all[0]);
+                const b = toNumbers(all[1]);
+                const c = toNumbers(all[2]);
+                const token = toHex(slowAES.decrypt(c, 2, a, b));
+
+                document.cookie =
+                    '__test=' + token +
+                    '; max-age=21600; path=/';
+
+                return token;
+            }
+
+            function isAesChallenge(text) {
+                return typeof text === 'string' &&
+                    text.includes('aes.js') &&
+                    text.includes('__test=');
+            }
+
+            async function apiFetch(url, options = {}) {
+                let res = await fetch(url, { ...options, credentials: 'same-origin' });
+                const text = await res.text();
+
+                if (isAesChallenge(text)) {
+                    console.warn('[Signaling] AES challenge — solving…');
+                    await solveAesChallenge(text);
+                    res = await fetch(url, { ...options, credentials: 'same-origin' });
+                    return res;
+                }
+
+                // Re-wrap body so callers can still .json()
+                return new Response(text, {
+                    status: res.status,
+                    statusText: res.statusText,
+                    headers: res.headers,
+                });
+            }
+
             /* Signaling */
             async function sendSignal(
                 event,
@@ -1459,7 +1528,7 @@
                 target = null
             ) {
                 const response =
-                    await fetch(
+                    await apiFetch(
                         '?action=send&room=' +
                         encodeURIComponent(ROOM) +
                         '&client=' +
@@ -1490,7 +1559,7 @@
             async function poll() {
                 try {
                     const response =
-                        await fetch(
+                        await apiFetch(
                             '?action=poll&room=' +
                             encodeURIComponent(ROOM) +
                             '&client=' +
