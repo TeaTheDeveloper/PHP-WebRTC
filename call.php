@@ -317,28 +317,61 @@
                 }
 
                 /* Remote video */
-
                 .remote-videos {
                     position: absolute;
                     inset: 0;
                     z-index: 1;
                     display: grid;
-                    grid-template-columns: repeat(
-                        auto-fit,
-                        minmax(min(100%, 420px), 1fr)
-                    );
-                    grid-auto-rows: minmax(0, 1fr);
-                    gap: 2px;
+                    gap: 4px;
+                    padding: 4px;
                     background: #050507;
+                    grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr));
+                    grid-template-rows: repeat(var(--rows, 1), minmax(0, 1fr));
+                    align-content: stretch;
+                    justify-content: stretch;
+                }
+
+                .remote-video-wrap {
+                    position: relative;
+                    min-width: 0;
+                    min-height: 0;
+                    overflow: hidden;
+                    border-radius: 10px;
+                    background: #0c0c10;
                 }
 
                 .remote-video {
                     width: 100%;
                     height: 100%;
-                    min-width: 0;
-                    min-height: 0;
                     object-fit: cover;
                     background: #050507;
+                    display: block;
+                }
+
+                .remote-video-label {
+                    position: absolute;
+                    left: 10px;
+                    bottom: 10px;
+                    max-width: calc(100% - 20px);
+                    padding: 4px 10px;
+                    border-radius: 8px;
+                    background: rgba(0, 0, 0, 0.55);
+                    color: rgba(255, 255, 255, 0.9);
+                    font-size: 12px;
+                    font-weight: 600;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    pointer-events: none;
+                }
+
+                .remote-videos[data-count="1"] {
+                    padding: 0;
+                    gap: 0;
+                }
+
+                .remote-videos[data-count="1"] .remote-video-wrap {
+                    border-radius: 0;
                 }
 
                 /* Local video */
@@ -1152,20 +1185,71 @@
             }
 
             /* WebRTC connection */
+            function layoutRemoteGrid() {
+                const count = remoteVideos.size;
+                const container = remoteVideosContainer;
+
+                container.dataset.count = String(count);
+
+                let cols = 1;
+                let rows = 1;
+
+                if (count <= 1) {
+                    cols = 1;
+                    rows = 1;
+                } else if (count === 2) {
+                    if (window.innerWidth >= 700) {
+                        cols = 2;
+                        rows = 1;
+                    } else {
+                        cols = 1;
+                        rows = 2;
+                    }
+                } else if (count <= 4) {
+                    cols = 2;
+                    rows = 2;
+                } else if (count <= 6) {
+                    cols = 3;
+                    rows = 2;
+                } else if (count <= 9) {
+                    cols = 3;
+                    rows = 3;
+                } else {
+                    cols = 4;
+                    rows = Math.ceil(count / 4);
+                }
+
+                container.style.setProperty('--cols', String(cols));
+                container.style.setProperty('--rows', String(rows));
+            }
+
+            window.addEventListener('resize', layoutRemoteGrid);
+
             function createRemoteVideo(peerId) {
                 if (remoteVideos.has(peerId)) {
                     return remoteVideos.get(peerId);
                 }
 
+                const wrap = document.createElement('div');
+                wrap.className = 'remote-video-wrap';
+                wrap.dataset.peerId = peerId;
+
                 const video = document.createElement('video');
                 video.className = 'remote-video';
                 video.autoplay = true;
                 video.playsInline = true;
-                video.dataset.peerId = peerId;
+
+                const label = document.createElement('div');
+                label.className = 'remote-video-label';
+                label.textContent = peerId.slice(0, 8);
+
+                wrap.appendChild(video);
+                wrap.appendChild(label);
+                remoteVideosContainer.appendChild(wrap);
 
                 remoteVideos.set(peerId, video);
-                remoteVideosContainer.appendChild(video);
                 emptyState.style.display = 'none';
+                layoutRemoteGrid();
 
                 return video;
             }
@@ -1174,14 +1258,21 @@
                 const video = remoteVideos.get(peerId);
 
                 if (video) {
+                    const wrap = video.closest('.remote-video-wrap');
                     video.srcObject = null;
-                    video.remove();
+                    if (wrap) {
+                        wrap.remove();
+                    } else {
+                        video.remove();
+                    }
                     remoteVideos.delete(peerId);
                 }
 
                 if (remoteVideos.size === 0) {
                     emptyState.style.display = 'grid';
                 }
+
+                layoutRemoteGrid();
             }
 
             function updateCallState() {
@@ -1866,11 +1957,17 @@
                     peerConnections.keys()
                 ).forEach(closePeerConnection);
 
-                remoteVideos.forEach(video => {
+                remoteVideos.forEach((video) => {
                     video.srcObject = null;
-                    video.remove();
+                    const wrap = video.closest('.remote-video-wrap');
+                    if (wrap) {
+                        wrap.remove();
+                    } else {
+                        video.remove();
+                    }
                 });
                 remoteVideos.clear();
+                layoutRemoteGrid();
 
                 isCalling = false;
                 incomingCall.classList.remove('show');
