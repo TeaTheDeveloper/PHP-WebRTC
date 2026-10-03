@@ -1,6 +1,6 @@
 # PHP-WebRTC
 
-PHP-WebRTC is a lightweight, browser-based video calling application built with **PHP, JavaScript, WebRTC, and file-based signaling**.
+PHP-WebRTC is a lightweight, browser-based video calling application built with **PHP, JavaScript, WebRTC, and JSON-based signaling**.
 
 The project is intentionally simple: there is no database, no framework, and no external signaling server. PHP handles a small temporary signaling queue while WebRTC establishes the actual peer-to-peer video connection between users.
 
